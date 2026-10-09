@@ -1,0 +1,86 @@
+_format_version: "3.0"
+
+# ---- Consumidores / credenciales (cambiar en producción) ----
+consumers:
+  - username: alice
+    keyauth_credentials: [{ key: alice-key }]
+  - username: bob
+    keyauth_credentials: [{ key: bob-key }]
+
+# ---- Observabilidad: métricas Prometheus en la Admin API (:8001/metrics) ----
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: true
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      ai_metrics: true      # tokens/coste/latencia del proveedor LLM (Kong >= 3.8)
+
+services:
+  # ===== 1) AI Gateway: ai-proxy (OSS) =====
+  # ai-proxy construye la petición al proveedor; aquí apunta al mock-llm.
+  # Para un LLM real ver docs/README.md (OpenAI, Ollama, Anthropic...).
+  - name: ai-llm
+    url: http://mock-llm:8000   # placeholder: ai-proxy lo sustituye por upstream_url
+    routes:
+      - name: ai-chat
+        paths: [/ai/chat]
+        strip_path: true
+    plugins:
+      - name: key-auth
+      - name: rate-limiting      # límite por consumidor
+        config: { minute: 10, policy: local, limit_by: consumer }
+      - name: correlation-id
+        config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+      - name: ai-prompt-decorator   # inyecta un system prompt corporativo
+        config:
+          prompts:
+            prepend:
+              - { role: system, content: "Responde siempre en español y de forma breve." }
+      - name: ai-prompt-guard       # bloquea prompts con patrones prohibidos
+        config:
+          allow_all_conversation_history: true
+          deny_patterns: [".*password.*", ".*ignore previous instructions.*"]
+      - name: ai-proxy
+        config:
+          route_type: llm/v1/chat
+          logging: { log_statistics: true, log_payloads: false }  # necesario para las métricas kong_ai_*
+          auth:
+            header_name: Authorization
+            header_value: Bearer mock-key
+          model:
+            provider: openai
+            name: gpt-4o-mini
+            options:
+              upstream_url: http://mock-llm:8000/v1/chat/completions
+
+  # ===== 2) MCP Gateway: proxy + políticas sobre MCP (Streamable HTTP) =====
+  - name: mcp-backend
+    url: http://mcp-server:8000
+    routes:
+      - name: mcp
+        paths: [/mcp]
+        strip_path: true
+    plugins:
+      - name: key-auth
+      - name: rate-limiting
+        config: { minute: 30, policy: local, limit_by: consumer }
+      - name: request-size-limiting
+        config: { allowed_payload_size: 1 }   # MB
+      - name: correlation-id
+        config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+
+  # ===== 3) A2A Gateway: proxy + políticas sobre agentes A2A =====
+  - name: a2a-backend
+    url: http://a2a-agent:8000
+    routes:
+      - name: a2a
+        paths: [/a2a]
+        strip_path: true
+    plugins:
+      - name: key-auth
+      - name: rate-limiting
+        config: { minute: 30, policy: local, limit_by: consumer }
+      - name: correlation-id
+        config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }

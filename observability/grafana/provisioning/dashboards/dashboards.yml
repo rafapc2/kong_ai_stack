@@ -1,0 +1,5 @@
+apiVersion: 1
+providers:
+  - name: kong
+    type: file
+    options: { path: /var/lib/grafana/dashboards }

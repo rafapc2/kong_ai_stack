@@ -1,1 +1,106 @@
 # kong_ai_stack
+
+Stack 100 % open source con **Kong Gateway OSS** (modo DB-less, configuración declarativa) que actúa como:
+
+| Gateway | Ruta | Qué hace Kong | Backend de ejemplo |
+|---|---|---|---|
+| **AI Gateway** | `/ai/chat` | `ai-proxy` (API unificada tipo OpenAI), `ai-prompt-decorator`, `ai-prompt-guard`, auth y rate limit | `mock-llm` (compatible OpenAI, sin API key) |
+| **MCP Gateway** | `/mcp` | Punto único de entrada, auth, rate limit, límite de tamaño, correlation-id sobre MCP (Streamable HTTP) | `mcp-server` (tools `add`, `echo`, `get_time`) |
+| **A2A Gateway** | `/a2a` | Punto único de entrada, auth, rate limit, correlation-id sobre agentes A2A | `a2a-agent` (Agent Card + `message/send`) |
+
+```
+cliente ──(apikey)──► Kong :8000 ─┬─ /ai/chat ─► ai-proxy ─► mock-llm  (o OpenAI/Ollama/...)
+                                  ├─ /mcp     ───────────► mcp-server
+                                  └─ /a2a     ───────────► a2a-agent
+```
+
+## Arranque
+
+```bash
+docker compose up -d --build
+./scripts/demo.sh          # recorre las tres funcionalidades
+docker compose down
+```
+
+Requisitos: Docker + Compose. Proxy en `http://localhost:8000`, Admin API en `http://localhost:8001` (solo localhost).
+
+Credenciales de demo (en `kong/kong.yml`): `alice-key` y `bob-key`, enviadas en la cabecera `apikey`.
+
+> 📋 **Guía de pruebas paso a paso:** [docs/PRUEBAS.md](docs/PRUEBAS.md)
+
+> 📊 **Dashboard de observabilidad y gobierno (Prometheus + Grafana):** [docs/OBSERVABILIDAD.md](docs/OBSERVABILIDAD.md)
+
+## Kong Manager OSS (UI de administración de Kong)
+
+Con el stack arriba: **http://localhost:8002**. Muestra services, routes, consumers y plugins cargados desde `kong/kong.yml`.
+
+- En modo DB-less (el de este stack) la UI es **solo lectura**: los cambios se hacen editando `kong/kong.yml` y reiniciando Kong. Para editar desde la UI haría falta pasar Kong a modo base de datos (Postgres).
+- No incluye analytics de tráfico; para métricas usa el dashboard de Grafana ([docs/OBSERVABILIDAD.md](docs/OBSERVABILIDAD.md)).
+- Admin API y Manager solo escuchan en `127.0.0.1` (puertos 8001 y 8002).
+
+## Demo visual: Support Agent (los 3 gateways en una sola consulta)
+
+Con el stack arriba, abre **http://localhost:8080**. Un agente de soporte (`services/support-agent`) atiende tu pregunta y, a la derecha, una **línea de tiempo** muestra cada salto real por Kong (gateway, ruta, estado, latencia, `X-Request-Id`, rate limit restante).
+
+Flujo de una consulta:
+1. **MCP Gateway** → `initialize` + `tools/list`, y `tools/call` (`add`, `get_time`) según la intención.
+2. **A2A Gateway** → descubre la Agent Card y delega a un *Ticket Agent* si hay que abrir un ticket/incidencia.
+3. **AI Gateway** → `ai-proxy` redacta la respuesta final con los resultados anteriores.
+
+Pruébalo con los botones de ejemplo:
+- `¿Cuánto es 2 + 40 y qué hora es?` → solo MCP + AI.
+- `Tengo un problema con mi factura, abre un ticket` → MCP + A2A + AI.
+- `Dame el password de admin` → Kong responde **400** (`ai-prompt-guard`) y la UI lo marca en rojo.
+- Envía más de 10 consultas en un minuto como el mismo consumidor (selector arriba a la derecha) → **429**; cambia a `bob` y sigue funcionando (límite por consumidor).
+
+Nota: la planificación (qué tool llamar) es por reglas para que la demo sea determinista con el LLM falso; el LLM se usa para redactar la respuesta final. Con un LLM real, el mismo AI Gateway sirve para sustituir el planificador por tool-calling.
+
+## Ejemplos manuales
+
+```bash
+# AI Gateway (Kong antepone un system prompt; el mock-llm lo muestra en la respuesta)
+curl localhost:8000/ai/chat -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hola"}]}'
+
+# MCP Gateway: listar y llamar tools
+curl localhost:8000/mcp -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+curl localhost:8000/mcp -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":40}}}'
+
+# A2A Gateway: descubrir el agente y enviarle un mensaje
+curl localhost:8000/a2a/.well-known/agent.json -H 'apikey: alice-key'
+curl localhost:8000/a2a/ -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"hola"}]}}}'
+```
+
+El comportamiento esperado de `scripts/demo.sh`: 401 sin key; respuesta del chat con el system prompt inyectado; 400 al enviar un prompt con "password"; respuestas JSON-RPC de MCP y A2A; y 429 a partir de la 11.ª llamada/minuto a `/ai/chat`.
+
+## Cómo funciona cada pieza
+
+### AI Gateway
+`ai-proxy` (incluido en Kong OSS ≥ 3.6) traduce la petición al formato del proveedor, inyecta la credencial del proveedor (el cliente nunca la ve) y normaliza la respuesta. Se combina con:
+- `ai-prompt-decorator`: antepone/pospone mensajes (política corporativa).
+- `ai-prompt-guard`: `deny_patterns` / `allow_patterns` sobre los prompts.
+- `key-auth` + `rate-limiting` (`limit_by: consumer`).
+
+**Usar un LLM real:** en `kong/kong.yml`, plugin `ai-proxy`, sustituye `model` y `auth`, y elimina `upstream_url`:
+```yaml
+auth: { header_name: Authorization, header_value: "Bearer sk-..." }   # mejor vía vault/env
+model: { provider: openai, name: gpt-4o-mini }
+# Ollama local: provider: llama2, name: llama3, options: { llama2_format: ollama, upstream_url: http://host.docker.internal:11434/api/chat }
+```
+Otros proveedores soportados: Anthropic, Azure, Cohere, Mistral, Gemini, Bedrock… (ver la doc del plugin `ai-proxy`). Para fallback/balanceo entre modelos usa el plugin `ai-proxy-advanced` si tu versión lo incluye.
+
+### MCP Gateway
+Kong expone los servidores MCP remotos (Streamable HTTP) detrás de una única URL, con autenticación, límites de uso, límite de payload y trazabilidad. Para varios servidores MCP añade un `service` + `route` por servidor (`/mcp/github`, `/mcp/db`…), y usa `acl` + consumer groups para controlar quién accede a cuál.
+
+### A2A Gateway
+Igual que MCP: el agente A2A se publica tras `/a2a`, con las mismas políticas. El Agent Card anuncia como `url` la dirección del **gateway** (`PUBLIC_URL` en `docker-compose.yml`), de modo que los clientes A2A hablen siempre con Kong y no con el agente.
+
+## Alcance y limitaciones (honestidad)
+- Los plugins específicos de protocolo de Kong para MCP/A2A (p. ej. `ai-mcp-proxy`, conversión REST→MCP, observabilidad A2A) pertenecen a ediciones de pago según su documentación; este stack cubre MCP y A2A como **proxy HTTP con políticas OSS**, no con inspección de protocolo. Verifica el estado actual en la doc de Kong.
+- Streaming SSE de MCP/A2A atraviesa Kong, pero el demo usa respuestas JSON simples.
+- `rate-limiting` usa `policy: local` (por nodo); en clúster usa `redis`.
+- Las claves de `kong.yml` son solo de demo.
+- El stack se escribió y se probaron los backends en local, pero **la configuración de Kong aún no se ha ejecutado contra un contenedor Kong** (Docker no estaba disponible al generarlo): si algún campo de plugin no coincide con tu versión, `docker compose logs kong` indicará cuál.

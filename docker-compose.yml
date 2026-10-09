@@ -1,0 +1,50 @@
+# Stack open source: Kong Gateway OSS (DB-less) como AI / MCP / A2A gateway.
+services:
+  kong:
+    image: kong:3.9
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      # Kong Manager OSS (UI web; solo lectura en modo DB-less)
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+      KONG_ADMIN_GUI_API_URL: http://localhost:8001
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: notice
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"   # proxy (único punto de entrada para clientes)
+      - "127.0.0.1:8001:8001"   # Admin API (solo local)
+      - "127.0.0.1:8002:8002"   # Kong Manager OSS (solo local)
+    depends_on: [mock-llm, mcp-server, a2a-agent]
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      retries: 5
+
+  # Backends de ejemplo (no expuestos al host: solo accesibles vía Kong)
+  mock-llm:
+    build: ./services/mock-llm
+  mcp-server:
+    build: ./services/mcp-server
+  a2a-agent:
+    build: ./services/a2a-agent
+    environment:
+      PUBLIC_URL: http://localhost:8000/a2a/
+
+  # Demo: agente de soporte (orquestador + UI). Todas sus llamadas pasan por Kong.
+  support-agent:
+    build: ./services/support-agent
+    environment:
+      GATEWAY: http://kong:8000
+      KEY_ALICE: alice-key
+      KEY_BOB: bob-key
+    ports:
+      - "8080:8080"
+    depends_on: [kong]

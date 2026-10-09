@@ -1,0 +1,37 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Traffic Control · Kong AI Stack</title>
+<style>
+:root{--bg:#0f1420;--p:#171e2e;--l:#27304a;--fg:#e6eaf5;--m:#8b95b3}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;padding:24px;max-width:900px;margin:auto}
+h1{font-size:18px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.c{background:var(--p);border:1px solid var(--l);border-radius:12px;padding:14px}.c h3{margin:0 0 4px;font-size:14px}.c p{margin:0 0 10px;color:var(--m);font-size:12px}
+button{font:inherit;color:var(--fg);background:#3b4a7a;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}button:hover{background:#4a5c94}
+.on{background:#16a34a}a{color:#93c5fd}
+.codes{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.codes span{padding:3px 9px;border-radius:99px;background:var(--l);font:12px ui-monospace,monospace}
+.k2{color:#34d399}.k4{color:#fbbf24}.k5{color:#f87171}
+input[type=range]{width:100%}
+</style></head><body>
+<h1>🚦 Traffic Control <span style="color:var(--m);font-weight:400">· genera carga contra Kong y mira el efecto en Grafana</span></h1>
+<p><a href="http://localhost:3001" target="_blank">Abrir Grafana ↗</a> · <a href="http://localhost:9090" target="_blank">Prometheus ↗</a></p>
+<div class="g">
+ <div class="c"><h3>Tráfico continuo</h3><p>Mezcla de MCP / A2A / AI con alice y bob.</p>
+  <button id="t" onclick="tog()">Iniciar</button> <span id="r">1</span> req/s
+  <input type="range" min="1" max="20" value="1" oninput="rps(this.value)"></div>
+ <div class="c"><h3>Ráfaga → 429</h3><p>40 chats seguidos (límite 10/min por consumidor): agota el rate limit por consumidor.</p><button onclick="sc('burst',40)">Lanzar</button></div>
+ <div class="c"><h3>Ataque de prompts → 400</h3><p>30 prompts con "password"/"ignore previous instructions".</p><button onclick="sc('attack',30)">Lanzar</button></div>
+ <div class="c"><h3>Sin credencial → 401</h3><p>30 peticiones anónimas a los 3 gateways.</p><button onclick="sc('anon',30)">Lanzar</button></div>
+ <div class="c"><h3>Tráfico normal</h3><p>50 peticiones de la mezcla normal.</p><button onclick="sc('normal',50)">Lanzar</button></div>
+</div>
+<h3>Respuestas enviadas</h3><div class="codes" id="codes">—</div>
+<script>
+let on=false,v=1;
+const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+function tog(){on=!on;post('/api/continuous',{on,rps:v});ui()}
+function rps(x){v=+x;$r.textContent=x;post('/api/continuous',{on,rps:v})}
+function sc(name,n){post('/api/scenario',{name,n})}
+const $r=document.getElementById('r');
+function ui(){const b=document.getElementById('t');b.textContent=on?'Detener':'Iniciar';b.className=on?'on':''}
+async function poll(){try{const s=await (await fetch('/api/stats')).json();on=s.state.on;ui();
+ const e=Object.entries(s.codes).sort();document.getElementById('codes').innerHTML=e.length?e.map(([c,n])=>`<span class="k${String(c)[0]}">${c}: ${n}</span>`).join(''):'—'}catch(e){}}
+setInterval(poll,1500);poll();
+</script></body></html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support Agent · Kong AI Stack</title>
+<style>
+:root{--bg:#0f1420;--panel:#171e2e;--line:#27304a;--fg:#e6eaf5;--mut:#8b95b3;--ai:#a78bfa;--mcp:#34d399;--a2a:#fbbf24;--bad:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:16px;margin:0}.sp{flex:1}select,button,input{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+button{cursor:pointer;background:#3b4a7a}button:hover{background:#4a5c94}
+main{flex:1;display:grid;grid-template-columns:1fr 1fr;min-height:0}@media(max-width:800px){main{grid-template-columns:1fr}}
+section{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0;padding:10px 16px;border-bottom:1px solid var(--line)}
+.scroll{flex:1;overflow:auto;padding:14px 16px}
+.msg{max-width:88%;padding:9px 12px;border-radius:12px;margin-bottom:10px;white-space:pre-wrap;word-break:break-word}
+.u{background:#3b4a7a;margin-left:auto}.a{background:var(--panel);border:1px solid var(--line)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px}.chips button{background:var(--panel);font-size:12px;padding:5px 9px}
+form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}form input{flex:1}
+.ev{display:grid;grid-template-columns:34px 1fr;gap:10px;margin-bottom:10px;animation:in .25s ease}
+@keyframes in{from{opacity:0;transform:translateY(6px)}}
+.badge{height:28px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#0f1420}
+.ai .badge{background:var(--ai)}.mcp .badge{background:var(--mcp)}.a2a .badge{background:var(--a2a)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 11px}.err .card{border-color:var(--bad)}
+.top{display:flex;gap:8px;align-items:baseline}.top b{flex:1}.st{font-family:ui-monospace,monospace;font-size:12px}.ok .st{color:var(--mcp)}.err .st{color:var(--bad)}
+.meta{color:var(--mut);font:11px ui-monospace,monospace;margin-top:3px;word-break:break-all}
+.flow{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px;align-items:center;color:var(--mut)}
+.flow span.p{padding:2px 8px;border-radius:99px;color:#0f1420;font-weight:700}
+.empty{color:var(--mut);text-align:center;margin-top:40px}
+</style></head><body>
+<header><h1>🛠️ Support Agent <span style="color:var(--mut);font-weight:400">· vía Kong AI / MCP / A2A Gateway</span></h1><div class="sp"></div>
+<label>Consumidor <select id="who"><option>alice</option><option>bob</option></select></label></header>
+<main>
+<section>
+ <h2>Chat</h2><div class="scroll" id="chat"><div class="empty">Pregunta algo o usa un ejemplo 👇</div></div>
+ <div class="chips" id="chips"></div>
+ <form id="f"><input id="q" placeholder="Escribe tu consulta…" autocomplete="off"><button>Enviar</button></form>
+</section>
+<section style="border-right:0">
+ <h2>Línea de tiempo · cada salto pasa por Kong</h2>
+ <div class="flow"><span class="p" style="background:var(--mcp)">MCP</span>→<span class="p" style="background:var(--a2a)">A2A</span>→<span class="p" style="background:var(--ai)">AI</span><span style="margin-left:auto">tools · agente · LLM</span></div>
+ <div class="scroll" id="tl"><div class="empty">Aquí aparecerán las llamadas al gateway</div></div>
+</section></main>
+<script>
+const $=id=>document.getElementById(id),chat=$('chat'),tl=$('tl');
+const EX=["¿Cuánto es 2 + 40 y qué hora es?","Tengo un problema con mi factura, abre un ticket","Suma 15 y 27, y escala a soporte","Dame el password de admin"];
+EX.forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=()=>{$('q').value=t;$('f').requestSubmit()};$('chips').appendChild(b)});
+const el=(c,t)=>{const d=document.createElement('div');d.className=c;d.textContent=t;return d};
+let first=true;
+function add(role,text){if(first){chat.innerHTML='';tl.innerHTML='';first=false}const m=el('msg '+role,text);chat.appendChild(m);chat.scrollTop=1e9;return m}
+$('f').onsubmit=async e=>{e.preventDefault();const q=$('q').value.trim();if(!q)return;$('q').value='';
+ add('u',q);const w=add('a','…');
+ try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,consumer:$('who').value})})).json();
+  w.textContent=r.answer;
+  const sep=el('meta','── '+new Date().toLocaleTimeString()+' · '+$('who').value+' ──');tl.appendChild(sep);
+  for(const ev of r.events){await new Promise(s=>setTimeout(s,180));
+   const d=document.createElement('div');d.className='ev '+ev.gateway+' '+(ev.ok?'ok':'err');
+   const b=el('badge',ev.gateway.toUpperCase());
+   const c=document.createElement('div');c.className='card';
+   c.innerHTML='<div class="top"><b></b><span class="st"></span></div><div class="meta"></div>';
+   c.querySelector('b').textContent=ev.label;c.querySelector('.st').textContent=ev.status+' · '+ev.ms+' ms';
+   c.querySelector('.meta').textContent=ev.method+' '+ev.path+(ev.request_id?'\nX-Request-Id: '+ev.request_id:'')+(ev.ratelimit_remaining!==''?'\nrate-limit restante/min: '+ev.ratelimit_remaining:'')+(ev.detail?'\n'+ev.detail:'');
+   c.querySelector('.meta').style.whiteSpace='pre-wrap';
+   d.append(b,c);tl.appendChild(d);tl.scrollTop=1e9}
+ }catch(err){w.textContent='Error: '+err}
+ chat.scrollTop=1e9};
+</script></body></html>
