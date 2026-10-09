@@ -14,7 +14,16 @@ cliente ──(apikey)──► Kong :8000 ─┬─ /ai/chat ─► ai-proxy �
                                   └─ /a2a     ───────────► a2a-agent
 ```
 
-## Arranque
+## Inicio rápido con el script orquestador
+
+```bash
+./scripts/stack.sh all --obs   # parte de cero (limpia, reconstruye, levanta) y ejecuta 31 pruebas
+./scripts/stack.sh help        # up | test | demo | status | logs | down | reset | all | urls
+```
+
+`stack.sh` comprueba Docker y que los puertos estén libres (8000, 8001, 8002, 8080 y, con `--obs`, 9090, 8090 y 3001), levanta el stack, espera a que cada servicio responda y, con `test`, valida lo mismo que [docs/PRUEBAS.md](docs/PRUEBAS.md) con código de salida ≠ 0 si algo falla. `reset` solo toca contenedores, volúmenes e imágenes de este proyecto.
+
+## Arranque manual
 
 ```bash
 docker compose up -d --build

@@ -8,6 +8,10 @@ Stack open source de Kong Gateway OSS (DB-less) que funciona como AI gateway, MC
 
 ## Comandos
 
+`./scripts/stack.sh` orquesta todo (`up [--obs]`, `test`, `reset`, `all --obs` = limpiar + reconstruir + 31 pruebas; `help` lista el resto). Comprobar sus pruebas es la validación end-to-end. Con bash 3.2 de macOS evita arrays vacíos bajo `set -u`.
+
+Comandos equivalentes a mano:
+
 ```bash
 docker compose up -d --build   # levanta Kong (:8000 proxy, :8001 admin) + 3 backends
 ./scripts/demo.sh              # ejercita /ai/chat, /mcp y /a2a vía Kong

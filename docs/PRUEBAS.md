@@ -7,6 +7,8 @@ Valida el stack completo (Kong + AI/MCP/A2A gateway + demo del agente de soporte
 - Puertos libres: `8000` (proxy Kong), `8001` (Admin API), `8080` (demo).
 - `curl`. `python3` es opcional (formatea JSON en el script de demo).
 
+> **Atajo automático:** `./scripts/stack.sh all --obs` ejecuta desde cero los pasos 1–9 de esta guía (31 comprobaciones). Los pasos siguientes son la versión manual.
+
 ## 1. Levantar el stack
 ```bash
 docker compose up -d --build
