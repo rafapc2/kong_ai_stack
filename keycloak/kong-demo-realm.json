@@ -1,0 +1,55 @@
+{
+  "realm": "kong-demo",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "demo-rsa",
+        "providerId": "rsa",
+        "config": {
+          "priority": [
+            "1000"
+          ],
+          "enabled": [
+            "true"
+          ],
+          "active": [
+            "true"
+          ],
+          "algorithm": [
+            "RS256"
+          ],
+          "privateKey": [
+            "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCXzVySknpKaEuH\nXJZtkzv8C3UdoiGOz0XBLXgFx2OfjLIu++MgPjZakxhka9eNYuNKealCZrLsg/VE\njklLa0KGr189pXxHogEf0TbfetfIaJqA4krS4SOY9KUW3F3URotB1dU/xSLRn7Hc\noB2EpsG0ohkurslpVduFsp51gXwqcjLlCwNMNZ7SMxizNcUIB28gZevtHC962aNc\nstpiWyzpB8o4gF/Q7q6P3minEWahaWORX0TQG+fCBUOw8ko3ND5scBev+UEDh/td\n3XIeW1cgY9sCYuXG2+Q9HybHvrsIkO2t8Ja1fjctADFQYJdpAnogrxWBP3Dp3kj3\n+rXhXR8/AgMBAAECggEAGFoStlYBKtvoTI1cebTbiTyyoPpYCnd9vSufdsMxsW/5\n9Zzle/qpmttrV6YP14KRlmpF7ieuHvsG5uSHJYN4vJp4MNonQbvfakyUUkLRSDkK\nRWVdPiRtItBm22/72Ah+YSVTJv5nmNvWxd8kXRn94Q2lSd6IOPmo/vL/MI0rxLMl\n3ETa1jwcZRZJOfhLjyzJS0WT3s/4kaFn/8fNHhtroTrwy4DFsVTUUxjIruCrp9YJ\nRLwmJddZyuaAF1ZhXLCAT2PdXaOOmprU57n+/53upiKXVZti02B5lNgLpnxo+GiI\ntu4fjx1B8NhZC+nJPCaabRqa6+4ITGILdLsUS8S3YQKBgQDO8wpcamMfdh7yxz9b\nNduo26yvZ/+d/J937LPpwBcoGDW9AwePprl8n4Bbz5OOC17bT4EdA4pqDHwn9XYd\n56M+J5brurhuQoxy5WTZQ/sRfm7ssg+n4EEZBbfmg6V9RNF0j1+mSyydf5JkxEw1\nW8EWIsg6S00eEiK8RkD7zfXpVQKBgQC7yC8qfepUNvgKYjvzyPEpIM926wdJBVaJ\n0l/2CrKwIG5k+Mk0PbD7l2oA1lrRVWx1GXHXXPGZ9xx3gOMsRL35vus8vTnFpkrc\ndvB+xoQoUEXVqq2/mlt+LFuEvdjnzipkIGFQlYMWGoa4SBcdXrflcZaIdM+1YqIR\nMC/ANSTWQwKBgG8fBXM2FN9x15BY+GYLd1UmD4Vn/FNisGX+jWR4Jnb6+O/yzn6N\n8Y8/PfcOcJaW+GoeOJ/RpOLorUnvfWr1VCwtqdYNvrZFuZCAKDSZUhjEoN8rhUiJ\nG6tJ7MMz8Qpgh29lBOEQAHbZZ0wAM0N7byRprMXQZSo+ZrRdrMsIfoC5AoGBAKth\nj5KDautDY+vuLfNYEKnNtSs+Y97EDXAp3cTrjJvsbXSgDtor96wXS/rJqAdnpF3X\nRCwfOq2fd46lxi/v6UbXdVBxDxoRpD9EGkhKG/HDGYlhhcPaN+iWyUwEDMO7SLsr\nRkXKvuHcgdoMiXQXr1Sr74xIuA0+oNV5GgudNSqLAoGBAMkjN631Jy2Zz9K+NZjd\nqNO6vjvbDHt48g3iSeVhJyq1Js+NpdsQIFpPgtqywMyJ1+ptnheapDHhQS14HuYx\n9dXM/kaOwV3cflOH70l5oP79iKRcart7xEUDytxWI/5abwhUVY9/LfYXLex3hJt9\nXZd6cHdstarPkD9ppnoXNu3k\n-----END PRIVATE KEY-----\n"
+          ]
+        }
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "alice-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "alice-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "bob-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "bob-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ]
+}

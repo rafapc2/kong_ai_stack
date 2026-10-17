@@ -33,7 +33,7 @@ docker compose down
 
 Requisitos: Docker + Compose. Proxy en `http://localhost:8000`, Admin API en `http://localhost:8001` (solo localhost).
 
-Credenciales de demo (en `kong/kong.yml`): `alice-key` y `bob-key`, enviadas en la cabecera `apikey`.
+Credenciales de demo (en `kong/kong.yml`): `alice-key` y `bob-key`, enviadas en la cabecera `apikey` (o un Bearer token de Keycloak: ver [OAuth2](#oauth2-client_credentials-con-keycloak)).
 
 > 📋 **Guía de pruebas paso a paso:** [docs/PRUEBAS.md](docs/PRUEBAS.md)
 
@@ -84,6 +84,21 @@ curl localhost:8000/a2a/ -H 'apikey: alice-key' -H 'Content-Type: application/js
 ```
 
 El comportamiento esperado de `scripts/demo.sh`: 401 sin key; respuesta del chat con el system prompt inyectado; 400 al enviar un prompt con "password"; respuestas JSON-RPC de MCP y A2A; y 429 a partir de la 11.ª llamada/minuto a `/ai/chat`.
+
+## OAuth2 (client_credentials) con Keycloak
+
+Además de `apikey`, los tres gateways aceptan `Authorization: Bearer <token>` emitido por **Keycloak** (realm `kong-demo`, importado de `keycloak/kong-demo-realm.json`). Kong no emite tokens: solo los valida con el plugin OSS `jwt` (firma RS256 + `exp`), sin plugins de pago.
+
+```bash
+TOKEN=$(curl -s localhost:8180/realms/kong-demo/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d client_id=alice-client -d client_secret=alice-secret | jq -r .access_token)
+curl localhost:8000/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+```
+
+- Clientes de demo: `alice-client`/`alice-secret` y `bob-client`/`bob-secret` (consola de Keycloak: `http://localhost:8180`, admin/admin). Cada uno es un consumer de Kong (`jwt_secrets` con `key` = claim `azp`), así que el rate limit sigue siendo por consumidor.
+- `jwt` y `key-auth` llevan `anonymous` para poder usar cualquiera de los dos; `pre-function` (sin credenciales) y `post-function` (credencial inválida) devuelven 401.
+- **Limitaciones del OSS:** la clave pública del realm está fija en `kong.yml` (la clave RSA del realm es de demo y está en el repo; en producción genera la tuya y no la versiones). No hay lectura de JWKS ni rotación automática: si rotas las claves de Keycloak hay que actualizar `rsa_public_key`. Tampoco hay introspección ni revocación: usa tokens de vida corta (aquí 5 min). La audiencia/issuer no se validan.
 
 ## Cómo funciona cada pieza
 

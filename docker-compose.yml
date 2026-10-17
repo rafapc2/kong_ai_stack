@@ -32,6 +32,19 @@ services:
       interval: 10s
       retries: 5
 
+  # Servidor de autorización OAuth2/OIDC (emite tokens client_credentials; Kong valida la firma con jwt).
+  # Realm importado de keycloak/kong-demo-realm.json (clave RSA de DEMO fija: no usar en producción).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak/kong-demo-realm.json:/opt/keycloak/data/import/kong-demo-realm.json:ro
+    ports:
+      - "127.0.0.1:8180:8080"
+
   # Backends de ejemplo (no expuestos al host: solo accesibles vía Kong)
   mock-llm:
     build: ./services/mock-llm
