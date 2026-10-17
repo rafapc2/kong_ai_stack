@@ -2,10 +2,37 @@ _format_version: "3.0"
 
 # ---- Consumidores / credenciales (cambiar en producción) ----
 consumers:
+  - username: anonymous   # consumidor ficticio: lo asigna el plugin jwt cuando no hay Bearer (luego exige key-auth)
   - username: alice
     keyauth_credentials: [{ key: alice-key }]
+    jwt_secrets:      # OAuth2 client_credentials emitido por Keycloak: key = claim azp (client_id del token)
+      - key: alice-client
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl81ckpJ6SmhLh1yWbZM7
+          /At1HaIhjs9FwS14Bcdjn4yyLvvjID42WpMYZGvXjWLjSnmpQmay7IP1RI5JS2tC
+          hq9fPaV8R6IBH9E233rXyGiagOJK0uEjmPSlFtxd1EaLQdXVP8Ui0Z+x3KAdhKbB
+          tKIZLq7JaVXbhbKedYF8KnIy5QsDTDWe0jMYszXFCAdvIGXr7RwvetmjXLLaYlss
+          6QfKOIBf0O6uj95opxFmoWljkV9E0BvnwgVDsPJKNzQ+bHAXr/lBA4f7Xd1yHltX
+          IGPbAmLlxtvkPR8mx767CJDtrfCWtX43LQAxUGCXaQJ6IK8VgT9w6d5I9/q14V0f
+          PwIDAQAB
+          -----END PUBLIC KEY-----
   - username: bob
     keyauth_credentials: [{ key: bob-key }]
+    jwt_secrets:      # OAuth2 client_credentials emitido por Keycloak: key = claim azp (client_id del token)
+      - key: bob-client
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl81ckpJ6SmhLh1yWbZM7
+          /At1HaIhjs9FwS14Bcdjn4yyLvvjID42WpMYZGvXjWLjSnmpQmay7IP1RI5JS2tC
+          hq9fPaV8R6IBH9E233rXyGiagOJK0uEjmPSlFtxd1EaLQdXVP8Ui0Z+x3KAdhKbB
+          tKIZLq7JaVXbhbKedYF8KnIy5QsDTDWe0jMYszXFCAdvIGXr7RwvetmjXLLaYlss
+          6QfKOIBf0O6uj95opxFmoWljkV9E0BvnwgVDsPJKNzQ+bHAXr/lBA4f7Xd1yHltX
+          IGPbAmLlxtvkPR8mx767CJDtrfCWtX43LQAxUGCXaQJ6IK8VgT9w6d5I9/q14V0f
+          PwIDAQAB
+          -----END PUBLIC KEY-----
 
 # ---- Observabilidad: métricas Prometheus en la Admin API (:8001/metrics) ----
 plugins:
@@ -88,7 +115,28 @@ services:
                   max_tokens: 512
                   temperature: 0.7
     plugins:
+      - name: jwt               # OAuth2 (client_credentials) delegado en Keycloak; alternativa a apikey
+        config:
+          key_claim_name: azp
+          claims_to_verify: [exp]
+          anonymous: anonymous
       - name: key-auth
+        config: { anonymous: anonymous }
+      - name: pre-function      # corte temprano: sin apikey ni Authorization → 401 antes de cualquier otro plugin
+        config:
+          access:
+            - |
+              if not kong.request.get_header("apikey") and not kong.request.get_header("authorization") then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
+      - name: post-function     # sin apikey ni Bearer válido → consumidor "anonymous" → 401 (jwt y key-auth se complementan con "anonymous")
+        config:
+          access:
+            - |
+              local c = kong.client.get_consumer()
+              if not c or c.username == "anonymous" then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
       - name: rate-limiting      # límite por consumidor (compartido entre las 3 rutas = presupuesto de IA)
         config: { minute: 10, policy: local, limit_by: consumer }
       - name: correlation-id
@@ -111,7 +159,28 @@ services:
         paths: [/mcp]
         strip_path: true
     plugins:
+      - name: jwt               # OAuth2 (client_credentials) delegado en Keycloak; alternativa a apikey
+        config:
+          key_claim_name: azp
+          claims_to_verify: [exp]
+          anonymous: anonymous
       - name: key-auth
+        config: { anonymous: anonymous }
+      - name: pre-function      # corte temprano: sin apikey ni Authorization → 401 antes de cualquier otro plugin
+        config:
+          access:
+            - |
+              if not kong.request.get_header("apikey") and not kong.request.get_header("authorization") then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
+      - name: post-function     # sin apikey ni Bearer válido → consumidor "anonymous" → 401 (jwt y key-auth se complementan con "anonymous")
+        config:
+          access:
+            - |
+              local c = kong.client.get_consumer()
+              if not c or c.username == "anonymous" then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
       - name: rate-limiting
         config: { minute: 30, policy: local, limit_by: consumer }
       - name: request-size-limiting
@@ -127,7 +196,28 @@ services:
         paths: [/a2a]
         strip_path: true
     plugins:
+      - name: jwt               # OAuth2 (client_credentials) delegado en Keycloak; alternativa a apikey
+        config:
+          key_claim_name: azp
+          claims_to_verify: [exp]
+          anonymous: anonymous
       - name: key-auth
+        config: { anonymous: anonymous }
+      - name: pre-function      # corte temprano: sin apikey ni Authorization → 401 antes de cualquier otro plugin
+        config:
+          access:
+            - |
+              if not kong.request.get_header("apikey") and not kong.request.get_header("authorization") then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
+      - name: post-function     # sin apikey ni Bearer válido → consumidor "anonymous" → 401 (jwt y key-auth se complementan con "anonymous")
+        config:
+          access:
+            - |
+              local c = kong.client.get_consumer()
+              if not c or c.username == "anonymous" then
+                return kong.response.exit(401, { message = "Unauthorized: se requiere apikey o Bearer token" }, { ["WWW-Authenticate"] = "Bearer" })
+              end
       - name: rate-limiting
         config: { minute: 30, policy: local, limit_by: consumer }
       - name: correlation-id

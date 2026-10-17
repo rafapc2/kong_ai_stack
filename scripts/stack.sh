@@ -50,7 +50,7 @@ preflight() {
   local obs="$1"
   step "Comprobaciones previas"
   need_docker
-  local ports=(8000 8001 8002 8080)
+  local ports=(8000 8001 8002 8080 8180)
   [ "$obs" = 1 ] && ports+=(9090 8090 "$GRAFANA_PORT")
   check_ports "${ports[@]}"
   say "${c_ok}✓${c_off} Docker listo y puertos libres: ${ports[*]}"
@@ -69,6 +69,7 @@ wait_for() {   # wait_for <descripcion> <timeout_s> <comando...>
 }
 kong_ready()  { curl -fs "$ADMIN/status" >/dev/null && [ "$(curl -s "$ADMIN/services" | grep -o '"name"' | wc -l)" -ge 3 ]; }
 mcp_ready()   { [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$GW/mcp" -H 'apikey: alice-key' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"ping"}')" = 200 ]; }
+kc_ready()    { curl -fs localhost:8180/realms/kong-demo >/dev/null; }
 agent_ready() { [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/)" = 200 ]; }
 prom_ready()  { curl -fs localhost:9090/-/ready; }
 graf_ready()  { curl -fs "localhost:${GRAFANA_PORT}/api/health"; }
@@ -86,6 +87,7 @@ cmd_up() {
   wait_for "Kong (config cargada)" 90 kong_ready
   wait_for "MCP Gateway"           60 mcp_ready
   wait_for "Support Agent :8080"   60 agent_ready
+  wait_for "Keycloak :8180 (realm kong-demo)" 120 kc_ready
   if [ "$obs" = 1 ]; then
     wait_for "Prometheus :9090"            60 prom_ready
     wait_for "Grafana :${GRAFANA_PORT}"    90 graf_ready
@@ -121,6 +123,7 @@ cmd_urls() {
   Kong Manager OSS       http://localhost:8002   (solo lectura, DB-less)
   Kong Admin API         $ADMIN                  (solo localhost)
   Demo Support Agent     http://localhost:8080
+  Keycloak (OAuth2)      http://localhost:8180   (admin/admin; realm kong-demo, clientes alice-client/bob-client)
 EOF
   if obs_running; then cat <<EOF
   Panel de tráfico       http://localhost:8090
@@ -188,6 +191,20 @@ cmd_test() {
 
   step "Seguridad: sin API key"
   for p in /ai/chat /mcp /a2a/; do check "401 en $p" 401 "$(code "$GW$p")"; done
+
+  step "OAuth2 client_credentials (Keycloak → plugin jwt)"
+  local tok tokb tokurl="http://localhost:8180/realms/kong-demo/protocol/openid-connect/token"
+  tok="$(curl -s "$tokurl" -d grant_type=client_credentials -d client_id=alice-client -d client_secret=alice-secret | sed -nE 's/.*"access_token":"([^"]+)".*/\1/p')"
+  tokb="$(curl -s "$tokurl" -d grant_type=client_credentials -d client_id=bob-client -d client_secret=bob-secret | sed -nE 's/.*"access_token":"([^"]+)".*/\1/p')"
+  check "Keycloak emite token (alice-client)" yes "$([ -n "$tok" ] && echo yes || echo no)"
+  check "Keycloak rechaza secret incorrecto" 401 "$(code "$tokurl" -d grant_type=client_credentials -d client_id=alice-client -d client_secret=mal)"
+  local ping='{"jsonrpc":"2.0","id":1,"method":"ping"}'
+  check "Bearer válido → 200 en /mcp" 200 "$(code "$GW/mcp" -H "Authorization: Bearer $tok" "${JH[@]}" -d "$ping")"
+  check "Bearer válido → 200 en /a2a" 200 "$(code "$GW/a2a/.well-known/agent.json" -H "Authorization: Bearer $tok")"
+  check "Bearer con firma alterada → 401" 401 "$(code "$GW/mcp" -H "Authorization: Bearer ${tok}x" "${JH[@]}" -d "$ping")"
+  check "apikey sigue funcionando junto a OAuth" 200 "$(code "$GW/mcp" "${A[@]}" -d "$ping")"
+  check "apikey inválida → 401" 401 "$(code "$GW/mcp" -H 'apikey: nope' "${JH[@]}" -d "$ping")"
+  has "el token se asocia a un consumer (rate limit por cliente)" "X-RateLimit-Limit-Minute:" "$(curl -si "$GW/mcp" -H "Authorization: Bearer $tokb" "${JH[@]}" -d "$ping")"
 
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"
