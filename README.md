@@ -129,6 +129,8 @@ En `/oidc/...` una apikey da 401 y un token de máquina (`client_credentials`) d
 
 Después recrea Keycloak (`docker compose up -d --force-recreate keycloak`; el realm se importa al arrancar). Sin claves los botones se ven pero el proveedor rechaza el login; el usuario `demo` funciona siempre.
 
+**Probarlo con un navegador:** abre la mini app cliente en **http://localhost:8085** (`services/oidc-client/`): inicia sesión, ve tus claims y pulsa los botones de AI, MCP y A2A; también puedes repetir cada llamada sin token, con apikey o con token de máquina para ver los 401/403. Guía completa en [`bruno/oidc/GUIA-OIDC.md`](bruno/oidc/GUIA-OIDC.md).
+
 **Pruebas:** `./scripts/stack.sh test` hace el login `demo` por línea de comandos (sin navegador) y recorre los tres flujos; la colección Bruno tiene la carpeta separada `bruno/oidc/`. **Ninguna verifica el login real con Google/GitHub/LinkedIn** (requiere tus credenciales y un navegador).
 
 Limitaciones:

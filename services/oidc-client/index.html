@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cliente OIDC</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --mut:#667085; --line:#e4e7ec; --acc:#2557d6; --ok:#0a7d3c; --bad:#b42318; --warn:#a15c00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --card:#1c2027; --fg:#e8eaee; --mut:#98a2b3; --line:#2c323c; --acc:#7aa2ff; --ok:#4cc27f; --bad:#ff7b72; --warn:#e3a008; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; } p.sub { color:var(--mut); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); margin:0 0 10px; }
+  button, a.btn { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; padding:7px 12px; cursor:pointer; text-decoration:none; display:inline-block; }
+  button:hover, a.btn:hover { border-color:var(--acc); }
+  .primary { background:var(--acc); border-color:var(--acc); color:#fff; } @media (prefers-color-scheme: dark) { .primary { color:#10151d; } }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .grp { margin:8px 0; } .grp b { display:inline-block; min-width:70px; color:var(--mut); font-weight:600; }
+  .pill { padding:2px 10px; border-radius:99px; font-size:13px; border:1px solid var(--line); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:14px; } td { padding:3px 8px 3px 0; vertical-align:top; word-break:break-all; } td:first-child { color:var(--mut); width:150px; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:320px; font-size:13px; margin:8px 0 0; }
+  label { margin-right:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cliente OIDC de prueba</h1>
+  <p class="sub">authorization_code + PKCE contra Keycloak · llama a los gateways <code>/oidc/*</code> de Kong</p>
+
+  <div class="card">
+    <h2>Sesión</h2>
+    <div id="session" class="row"></div>
+    <table id="claims" style="margin-top:10px"></table>
+  </div>
+
+  <div class="card">
+    <h2>Llamadas al gateway</h2>
+    <div class="grp"><b>Enviar con</b>
+      <label><input type="radio" name="mode" value="user" checked> token de usuario (esperado 200)</label>
+      <label><input type="radio" name="mode" value="none"> sin token (401)</label>
+      <label><input type="radio" name="mode" value="apikey"> apikey (401)</label>
+      <label><input type="radio" name="mode" value="machine"> token de máquina (403)</label>
+    </div>
+    <div class="grp"><b>AI</b><span class="row" style="display:inline-flex">
+      <button data-t="ai">/oidc/ai/chat</button><button data-t="openai">OpenAI</button><button data-t="anthropic">Anthropic</button></span></div>
+    <div class="grp"><b>MCP</b><span class="row" style="display:inline-flex">
+      <button data-t="mcp_list">tools/list</button><button data-t="mcp_add">add(2, 40)</button></span></div>
+    <div class="grp"><b>A2A</b><span class="row" style="display:inline-flex">
+      <button data-t="a2a_card">Agent Card</button><button data-t="a2a_send">message/send</button></span></div>
+    <div id="result"></div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function refresh() {
+  const s = await (await fetch('/api/session')).json();
+  $('#session').innerHTML = s.logged_in
+    ? `<span class="pill ok">sesión iniciada</span><span>expira en ${s.expires_in}s</span><a class="btn" href="/logout">Cerrar sesión</a>`
+    : `<span class="pill warn">sin sesión</span><a class="btn primary" href="/login">Iniciar sesión (Keycloak)</a>
+       <span style="color:var(--mut)">demo / demo, o Google · GitHub · LinkedIn</span>`;
+  const c = s.claims || {};
+  $('#claims').innerHTML = ['preferred_username','email','name','azp','iss','sub'].filter(k => c[k])
+    .map(k => `<tr><td>${k}</td><td>${esc(c[k])}</td></tr>`).join('');
+}
+document.querySelectorAll('button[data-t]').forEach(b => b.onclick = async () => {
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  $('#result').innerHTML = '<pre>…</pre>';
+  const r = await (await fetch('/api/call', {method:'POST', body: JSON.stringify({target:b.dataset.t, mode})})).json();
+  const cls = r.status >= 200 && r.status < 300 ? 'ok' : 'bad';
+  const body = typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2);
+  $('#result').innerHTML = `<div class="row" style="margin-top:12px"><b>${esc(r.request||'')}</b><span class="pill ${cls}">HTTP ${r.status}</span><span style="color:var(--mut)">${r.ms??''} ms · modo: ${esc(r.mode)}</span></div>`
+    + (r.headers && Object.keys(r.headers).length ? `<pre>${esc(Object.entries(r.headers).map(([k,v])=>k+': '+v).join('\n'))}</pre>` : '')
+    + `<pre>${esc(body)}</pre>`;
+});
+refresh();
+</script>
+</body>
+</html>

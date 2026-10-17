@@ -50,7 +50,7 @@ preflight() {
   local obs="$1"
   step "Comprobaciones previas"
   need_docker
-  local ports=(8000 8001 8002 8080 8180)
+  local ports=(8000 8001 8002 8080 8085 8180)
   [ "$obs" = 1 ] && ports+=(9090 8090 "$GRAFANA_PORT")
   check_ports "${ports[@]}"
   say "${c_ok}✓${c_off} Docker listo y puertos libres: ${ports[*]}"
@@ -70,6 +70,7 @@ wait_for() {   # wait_for <descripcion> <timeout_s> <comando...>
 kong_ready()  { curl -fs "$ADMIN/status" >/dev/null && [ "$(curl -s "$ADMIN/services" | grep -o '"name"' | wc -l)" -ge 3 ]; }
 mcp_ready()   { [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$GW/mcp" -H 'apikey: alice-key' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"ping"}')" = 200 ]; }
 kc_ready()    { curl -fs localhost:8180/realms/kong-demo >/dev/null; }
+oidc_app_ready() { [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:8085/)" = 200 ]; }
 agent_ready() { [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/)" = 200 ]; }
 prom_ready()  { curl -fs localhost:9090/-/ready; }
 graf_ready()  { curl -fs "localhost:${GRAFANA_PORT}/api/health"; }
@@ -88,6 +89,7 @@ cmd_up() {
   wait_for "MCP Gateway"           60 mcp_ready
   wait_for "Support Agent :8080"   60 agent_ready
   wait_for "Keycloak :8180 (realm kong-demo)" 120 kc_ready
+  wait_for "App cliente OIDC :8085"  60 oidc_app_ready
   if [ "$obs" = 1 ]; then
     wait_for "Prometheus :9090"            60 prom_ready
     wait_for "Grafana :${GRAFANA_PORT}"    90 graf_ready
@@ -123,6 +125,7 @@ cmd_urls() {
   Kong Manager OSS       http://localhost:8002   (solo lectura, DB-less)
   Kong Admin API         $ADMIN                  (solo localhost)
   Demo Support Agent     http://localhost:8080
+  App cliente OIDC       http://localhost:8085   (login de usuario → llama a /oidc/*)
   Keycloak (OAuth2)      http://localhost:8180   (admin/admin; realm kong-demo, clientes alice-client/bob-client)
 EOF
   if obs_running; then cat <<EOF
@@ -158,6 +161,17 @@ oidc_login() {
   curl -s "$kc/token" -d grant_type=authorization_code -d client_id=mcp-oidc-client -d code="$code" \
     -d redirect_uri=http://localhost:9999/cb -d code_verifier="$v" | sed -nE 's/.*"access_token":"([^"]+)".*/\1/p'
   rm -f "$jar"
+}
+
+# Simula el navegador contra la app cliente OIDC (:8085): /login → Keycloak (demo/demo) → /callback. Deja la cookie en $1.
+app_login() {
+  local jar="$1" kj loc page act cb; kj="$(mktemp)"
+  loc="$(curl -s -c "$jar" -b "$jar" -o /dev/null -D - localhost:8085/login | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
+  page="$(curl -s -c "$kj" -b "$kj" "$loc")"
+  act="$(printf '%s' "$page" | sed -nE 's/.*action="([^"]+)".*/\1/p' | head -1 | sed 's/&amp;/\&/g')"
+  cb="$(curl -s -c "$kj" -b "$kj" -o /dev/null -D - "$act" -d username=demo -d password=demo | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
+  curl -s -c "$jar" -b "$jar" -o /dev/null "$cb"
+  rm -f "$kj"
 }
 
 # ---------- pruebas automáticas (equivalen a docs/PRUEBAS.md) ----------
@@ -259,6 +273,23 @@ cmd_test() {
   step "OIDC: A2A Gateway"
   check "Agent Card accesible con login" 200 "$(code "$GW/oidc/a2a/.well-known/agent.json" "${U[@]}")"
   has "message/send crea ticket" "Ticket TCK-" "$(curl -s "$GW/oidc/a2a/" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"mi factura"}]}}}')"
+
+  step "OIDC: app web cliente (:8085, authorization_code + PKCE de punta a punta)"
+  local jar; jar="$(mktemp)"
+  check "la app responde sin sesión" 200 "$(code localhost:8085/)"
+  has "sin sesión: logged_in false" '"logged_in": false' "$(curl -s localhost:8085/api/session)"
+  app_login "$jar"
+  has "tras el login la sesión es del usuario demo" '"preferred_username": "demo"' "$(curl -s -b "$jar" localhost:8085/api/session)"
+  appcall() { curl -s -b "$jar" localhost:8085/api/call -d "{\"target\":\"$1\",\"mode\":\"$2\"}" | tr -d ' \n'; }
+  has "la app llama a /oidc/ai/chat con el token → 200" '"status":200' "$(appcall ai user)"
+  has "la app llama a /oidc/mcp con el token → 200" '"status":200' "$(appcall mcp_add user)"
+  has "la app llama a /oidc/a2a con el token → 200" '"status":200' "$(appcall a2a_send user)"
+  has "la app sin token → 401" '"status":401' "$(appcall mcp_list none)"
+  has "la app con apikey → 401" '"status":401' "$(appcall mcp_list apikey)"
+  has "la app con token de máquina → 403" '"status":403' "$(appcall mcp_list machine)"
+  curl -s -o /dev/null -b "$jar" localhost:8085/logout
+  has "tras cerrar sesión no hay sesión" '"logged_in": false' "$(curl -s -b "$jar" localhost:8085/api/session)"
+  rm -f "$jar"
 
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"

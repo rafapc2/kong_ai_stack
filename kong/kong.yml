@@ -332,7 +332,8 @@ services:
         config:
           header_filter:
             - |
-              if kong.response.get_status() == 401 then
+              local ok, upstream = pcall(kong.service.response.get_status)   -- solo los 401 de Kong, no los del proveedor
+              if kong.response.get_status() == 401 and not (ok and upstream) then
                 kong.response.set_header("WWW-Authenticate", 'Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/oidc/ai"')
               end
       - name: rate-limiting      # límite por consumidor (compartido entre las 3 rutas = presupuesto de IA)
@@ -371,7 +372,8 @@ services:
         config:
           header_filter:
             - |
-              if kong.response.get_status() == 401 then
+              local ok, upstream = pcall(kong.service.response.get_status)   -- solo los 401 de Kong, no los del proveedor
+              if kong.response.get_status() == 401 and not (ok and upstream) then
                 kong.response.set_header("WWW-Authenticate", 'Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/oidc/mcp"')
               end
       - name: rate-limiting
@@ -399,7 +401,8 @@ services:
         config:
           header_filter:
             - |
-              if kong.response.get_status() == 401 then
+              local ok, upstream = pcall(kong.service.response.get_status)   -- solo los 401 de Kong, no los del proveedor
+              if kong.response.get_status() == 401 and not (ok and upstream) then
                 kong.response.set_header("WWW-Authenticate", 'Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/oidc/a2a"')
               end
       - name: rate-limiting

@@ -62,6 +62,15 @@ services:
     environment:
       PUBLIC_URL: http://localhost:8000/a2a/
 
+  # Mini app web cliente OIDC (authorization_code + PKCE) para probar /oidc/* con un navegador: http://localhost:8085
+  oidc-client:
+    build: ./services/oidc-client
+    environment:
+      GATEWAY: http://kong:8000
+    ports:
+      - "127.0.0.1:8085:8085"
+    depends_on: [kong, keycloak]
+
   # Demo: agente de soporte (orquestador + UI). Todas sus llamadas pasan por Kong.
   support-agent:
     build: ./services/support-agent
