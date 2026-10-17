@@ -165,13 +165,13 @@ oidc_login() {
 
 # Simula el navegador contra la app cliente OIDC (:8085): /login → Keycloak (demo/demo) → /callback. Deja la cookie en $1.
 app_login() {
-  local jar="$1" kj loc page act cb; kj="$(mktemp)"
+  local jar="$1" kj="${2:-$(mktemp)}" loc page act cb
   loc="$(curl -s -c "$jar" -b "$jar" -o /dev/null -D - localhost:8085/login | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
   page="$(curl -s -c "$kj" -b "$kj" "$loc")"
   act="$(printf '%s' "$page" | sed -nE 's/.*action="([^"]+)".*/\1/p' | head -1 | sed 's/&amp;/\&/g')"
   cb="$(curl -s -c "$kj" -b "$kj" -o /dev/null -D - "$act" -d username=demo -d password=demo | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
   curl -s -c "$jar" -b "$jar" -o /dev/null "$cb"
-  rm -f "$kj"
+  [ -n "${2:-}" ] || rm -f "$kj"
 }
 
 # ---------- pruebas automáticas (equivalen a docs/PRUEBAS.md) ----------
@@ -275,10 +275,10 @@ cmd_test() {
   has "message/send crea ticket" "Ticket TCK-" "$(curl -s "$GW/oidc/a2a/" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"mi factura"}]}}}')"
 
   step "OIDC: app web cliente (:8085, authorization_code + PKCE de punta a punta)"
-  local jar; jar="$(mktemp)"
+  local jar kjar; jar="$(mktemp)"; kjar="$(mktemp)"
   check "la app responde sin sesión" 200 "$(code localhost:8085/)"
   has "sin sesión: logged_in false" '"logged_in": false' "$(curl -s localhost:8085/api/session)"
-  app_login "$jar"
+  app_login "$jar" "$kjar"
   has "tras el login la sesión es del usuario demo" '"preferred_username": "demo"' "$(curl -s -b "$jar" localhost:8085/api/session)"
   appcall() { curl -s -b "$jar" localhost:8085/api/call -d "{\"target\":\"$1\",\"mode\":\"$2\"}" | tr -d ' \n'; }
   has "la app llama a /oidc/ai/chat con el token → 200" '"status":200' "$(appcall ai user)"
@@ -287,9 +287,12 @@ cmd_test() {
   has "la app sin token → 401" '"status":401' "$(appcall mcp_list none)"
   has "la app con apikey → 401" '"status":401' "$(appcall mcp_list apikey)"
   has "la app con token de máquina → 403" '"status":403' "$(appcall mcp_list machine)"
-  curl -s -o /dev/null -b "$jar" localhost:8085/logout
+  local lo; lo="$(curl -s -o /dev/null -D - -b "$jar" -c "$jar" localhost:8085/logout | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
+  check "el logout cierra la sesión SSO de Keycloak y vuelve a la app (sin pantalla de confirmación)" "http://localhost:8085/" "$(curl -s -o /dev/null -D - -b "$kjar" -c "$kjar" "$lo" | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
   has "tras cerrar sesión no hay sesión" '"logged_in": false' "$(curl -s -b "$jar" localhost:8085/api/session)"
-  rm -f "$jar"
+  local sso; sso="$(curl -s -o /dev/null -D - -c "$jar" -b "$jar" localhost:8085/login | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
+  has "un nuevo login pide credenciales (no hay SSO)" "login-actions/authenticate" "$(curl -s -o /dev/null -D - -c "$kjar" -b "$kjar" "$sso" | tr -d '\r'; curl -s -c "$kjar" -b "$kjar" "$sso" | grep -o 'login-actions/authenticate' | head -1)"
+  rm -f "$jar" "$kjar"
 
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"
