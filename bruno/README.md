@@ -12,6 +12,8 @@ La carpeta `99-rate-limit` consume la cuota de bob a propósito: déjala para el
 
 ## Pruebas OIDC (carpeta `oidc/`)
 
+> 📖 **Guía paso a paso (automática, Bruno, navegador y login social):** [oidc/GUIA-OIDC.md](oidc/GUIA-OIDC.md)
+
 Duplican los flujos AI, MCP y A2A bajo `/oidc/...`, que **solo aceptan un usuario con login** (apikey → 401, token de máquina → 403). Orden: ejecuta `oidc/00-login` primero; *Run collection* ya respeta el orden.
 
 - El token de usuario se obtiene con `mcp-oidc-test` (password grant, usuario `demo`/`demo`): es un cliente de **solo pruebas** para poder automatizar sin navegador. El flujo real es `authorization_code` + PKCE con `mcp-oidc-client` (pantalla de login con Google/GitHub/LinkedIn); `./scripts/stack.sh test` lo prueba por línea de comandos.
