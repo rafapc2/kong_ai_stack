@@ -1,16 +1,13 @@
 meta {
   name: Metadatos del recurso (RFC 9728)
   type: http
-  seq: 1
+  seq: 4
 }
 
 get {
-  url: {{gateway}}/.well-known/oauth-protected-resource/mcp-oidc
+  url: {{gateway}}/.well-known/oauth-protected-resource/oidc/mcp
   body: none
   auth: none
-}
-
-headers {
 }
 
 assert {

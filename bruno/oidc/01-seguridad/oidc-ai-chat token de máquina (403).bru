@@ -1,11 +1,11 @@
 meta {
-  name: Token de máquina client_credentials (403)
+  name: oidc-ai-chat token de máquina (403)
   type: http
-  seq: 4
+  seq: 3
 }
 
 post {
-  url: {{gateway}}/mcp-oidc
+  url: {{gateway}}/oidc/ai/chat
   body: json
   auth: none
 }
@@ -16,7 +16,7 @@ headers {
 }
 
 body:json {
-  {"jsonrpc":"2.0","id":1,"method":"ping"}
+  {"messages":[{"role":"user","content":"hola"}]}
 }
 
 assert {

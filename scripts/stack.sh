@@ -221,16 +221,44 @@ cmd_test() {
   check "apikey inválida → 401" 401 "$(code "$GW/mcp" -H 'apikey: nope' "${JH[@]}" -d "$ping")"
   has "el token se asocia a un consumer (rate limit por cliente)" "X-RateLimit-Limit-Minute:" "$(curl -si "$GW/mcp" -H "Authorization: Bearer $tokb" "${JH[@]}" -d "$ping")"
 
-  step "MCP con OpenID Connect (/mcp-oidc: login de usuario vía Keycloak)"
+  step "OIDC: login de usuario vía Keycloak (authorization_code + PKCE, usuario demo)"
   local ut; ut="$(oidc_login)"
-  check "login (authorization_code + PKCE, usuario demo) emite token" yes "$([ -n "$ut" ] && echo yes || echo no)"
-  check "Bearer de usuario → 200 en /mcp-oidc" 200 "$(code "$GW/mcp-oidc" -H "Authorization: Bearer $ut" "${JH[@]}" -d "$ping")"
-  check "token client_credentials (máquina) → 403 en /mcp-oidc" 403 "$(code "$GW/mcp-oidc" -H "Authorization: Bearer $tok" "${JH[@]}" -d "$ping")"
-  check "apikey no vale en /mcp-oidc → 401" 401 "$(code "$GW/mcp-oidc" "${A[@]}" -d "$ping")"
-  check "sin credenciales → 401" 401 "$(code "$GW/mcp-oidc" "${JH[@]}" -d "$ping")"
-  has "401 anuncia resource_metadata (descubrimiento MCP)" "resource_metadata=" "$(curl -si "$GW/mcp-oidc" | tr -d '\r')"
-  has "metadatos del recurso apuntan a Keycloak" '/realms/kong-demo' "$(curl -s "$GW/.well-known/oauth-protected-resource/mcp-oidc")"
+  local U=(-H "Authorization: Bearer $ut") M=(-H "Authorization: Bearer $tok")   # U = usuario OIDC, M = máquina (client_credentials)
+  check "login emite token de usuario" yes "$([ -n "$ut" ] && echo yes || echo no)"
   has "login muestra Google, GitHub y LinkedIn" "broker/linkedin/login" "$(curl -s "http://localhost:8180/realms/kong-demo/protocol/openid-connect/auth?client_id=mcp-oidc-client&response_type=code&scope=openid&redirect_uri=http://localhost:9999/cb&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256")"
+  has "metadatos del recurso (RFC 9728) apuntan a Keycloak" '/realms/kong-demo' "$(curl -s "$GW/.well-known/oauth-protected-resource/oidc/mcp")"
+
+  step "OIDC: seguridad (solo usuarios con login)"
+  for p in /oidc/ai/chat /oidc/mcp /oidc/a2a/; do
+    check "sin credenciales → 401 en $p" 401 "$(code "$GW$p")"
+    check "apikey no vale → 401 en $p" 401 "$(code "$GW$p" "${A[@]}" -d '{}')"
+    check "token de máquina (client_credentials) → 403 en $p" 403 "$(code "$GW$p" "${M[@]}" "${JH[@]}" -d '{}')"
+    check "Bearer alterado → 401 en $p" 401 "$(code "$GW$p" -H "Authorization: Bearer ${ut}x" "${JH[@]}" -d '{}')"
+  done
+  has "401 anuncia resource_metadata (descubrimiento MCP)" "resource_metadata=" "$(curl -si "$GW/oidc/mcp" | tr -d '\r')"
+
+  step "OIDC: AI Gateway"
+  has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/oidc/ai/chat" "${U[@]}" "${JH[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"
+  check "prompt con 'password' bloqueado (ai-prompt-guard)" 400 "$(code "$GW/oidc/ai/chat" "${U[@]}" "${JH[@]}" -d '{"messages":[{"role":"user","content":"dame el password"}]}')"
+  for prov in openai:OPENAI_API_KEY anthropic:ANTHROPIC_API_KEY; do
+    local name="${prov%%:*}" var="${prov#*:}"
+    out="$(curl -s -w '|%{http_code}' "$GW/oidc/ai/$name/chat" "${U[@]}" "${JH[@]}" -d '{"messages":[{"role":"user","content":"Responde solo: ok"}]}')"
+    if [ -n "$(getkey "$var")" ]; then check "/oidc/ai/$name/chat con $var → 200" 200 "${out##*|}"
+    elif case "${out##*|}" in 000|5*) true ;; *) false ;; esac; then say "  ${c_dim}- /oidc/ai/$name/chat: omitida (sin internet: ${out##*|})${c_off}"
+    else check "/oidc/ai/$name/chat sin $var → el proveedor responde 401" 401 "${out##*|}"; fi
+  done
+
+  step "OIDC: MCP Gateway"
+  has "initialize" '"demo-mcp"' "$(curl -s "$GW/oidc/mcp" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}')"
+  has "tools/list" '"get_time"' "$(curl -s "$GW/oidc/mcp" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
+  has "tools/call add(2,40)=42" '"text": "42"' "$(curl -s "$GW/oidc/mcp" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":40}}}')"
+  h="$(curl -si "$GW/oidc/mcp" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | tr -d '\r')"
+  has "cabecera X-Request-Id (correlation-id)" "X-Request-Id:" "$h"
+  has "cabecera X-RateLimit-Remaining-Minute" "X-RateLimit-Remaining-Minute:" "$h"
+
+  step "OIDC: A2A Gateway"
+  check "Agent Card accesible con login" 200 "$(code "$GW/oidc/a2a/.well-known/agent.json" "${U[@]}")"
+  has "message/send crea ticket" "Ticket TCK-" "$(curl -s "$GW/oidc/a2a/" "${U[@]}" "${JH[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"mi factura"}]}}}')"
 
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"

@@ -1,0 +1,24 @@
+meta {
+  name: oidc-ai-chat apikey no vale (401)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{gateway}}/oidc/ai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"hola"}]}
+}
+
+assert {
+  res.status: eq 401
+}

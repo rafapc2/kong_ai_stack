@@ -1,17 +1,17 @@
 meta {
-  name: apikey no vale (401)
+  name: oidc-mcp token de máquina (403)
   type: http
-  seq: 3
+  seq: 7
 }
 
 post {
-  url: {{gateway}}/mcp-oidc
+  url: {{gateway}}/oidc/mcp
   body: json
   auth: none
 }
 
 headers {
-  apikey: {{apikey_alice}}
+  Authorization: Bearer {{access_token_alice}}
   Content-Type: application/json
 }
 
@@ -20,5 +20,5 @@ body:json {
 }
 
 assert {
-  res.status: eq 401
+  res.status: eq 403
 }

@@ -9,4 +9,10 @@ Los tests de cada petición (pestaña *Assert*) equivalen a los de `./scripts/st
 Ojo: el rate limit es de 10/min por consumidor en IA (30/min en MCP): si ejecutas la colección varias veces seguidas, espera al minuto siguiente.
 La carpeta `99-rate-limit` consume la cuota de bob a propósito: déjala para el final.
 
-**`06-mcp-oidc`:** comprueba que `/mcp-oidc` rechaza apikey y tokens de máquina. La petición con login de usuario no está en la colección (necesita navegador): en Bruno puedes usar *Auth → OAuth 2.0 → Authorization Code* (PKCE, client `mcp-oidc-client`, auth URL `{{keycloak}}/realms/kong-demo/protocol/openid-connect/auth`, token URL `.../token`, usuario `demo`/`demo`) sobre `POST {{gateway}}/mcp-oidc`.
+
+## Pruebas OIDC (carpeta `oidc/`)
+
+Duplican los flujos AI, MCP y A2A bajo `/oidc/...`, que **solo aceptan un usuario con login** (apikey → 401, token de máquina → 403). Orden: ejecuta `oidc/00-login` primero; *Run collection* ya respeta el orden.
+
+- El token de usuario se obtiene con `mcp-oidc-test` (password grant, usuario `demo`/`demo`): es un cliente de **solo pruebas** para poder automatizar sin navegador. El flujo real es `authorization_code` + PKCE con `mcp-oidc-client` (pantalla de login con Google/GitHub/LinkedIn); `./scripts/stack.sh test` lo prueba por línea de comandos.
+- Para probar el flujo real en Bruno: *Auth → OAuth 2.0 → Authorization Code*, client `mcp-oidc-client`, PKCE, auth URL `{{keycloak}}/realms/kong-demo/protocol/openid-connect/auth` y token URL `.../token`.

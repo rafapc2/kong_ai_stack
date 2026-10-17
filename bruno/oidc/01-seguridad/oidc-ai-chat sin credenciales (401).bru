@@ -1,0 +1,24 @@
+meta {
+  name: oidc-ai-chat sin credenciales (401)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{gateway}}/oidc/ai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"hola"}]}
+}
+
+assert {
+  res.status: eq 401
+  res.headers["www-authenticate"]: contains resource_metadata
+}

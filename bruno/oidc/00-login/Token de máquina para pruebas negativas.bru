@@ -1,0 +1,25 @@
+meta {
+  name: Token de máquina para pruebas negativas
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{keycloak}}/realms/kong-demo/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  client_id: {{alice_client_id}}
+  client_secret: {{alice_client_secret}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  bru.setVar("access_token_alice", res.body.access_token);
+}

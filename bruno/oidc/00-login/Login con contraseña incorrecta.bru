@@ -1,0 +1,22 @@
+meta {
+  name: Login con contraseña incorrecta
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{keycloak}}/realms/kong-demo/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: password
+  client_id: mcp-oidc-test
+  username: {{demo_user}}
+  password: mal
+}
+
+assert {
+  res.status: eq 401
+}

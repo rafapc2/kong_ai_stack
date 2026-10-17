@@ -1,0 +1,19 @@
+meta {
+  name: Agent Card
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gateway}}/oidc/a2a/.well-known/agent.json
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_user}}
+}
+
+assert {
+  res.status: eq 200
+}

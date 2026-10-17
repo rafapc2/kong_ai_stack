@@ -1,0 +1,24 @@
+meta {
+  name: oidc-a2a apikey no vale (401)
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{gateway}}/oidc/a2a/
+  body: json
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"jsonrpc":"2.0","id":1,"method":"ping"}
+}
+
+assert {
+  res.status: eq 401
+}

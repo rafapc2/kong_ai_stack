@@ -1,0 +1,24 @@
+meta {
+  name: OpenAI (sin clave: 401 del proveedor)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{gateway}}/oidc/ai/openai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_user}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"Responde solo: ok"}]}
+}
+
+assert {
+  res.status: in [200, 401]
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Login usuario demo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{keycloak}}/realms/kong-demo/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: password
+  client_id: mcp-oidc-test
+  username: {{demo_user}}
+  password: {{demo_password}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.access_token: isString
+}
+
+script:post-response {
+  bru.setVar("access_token_user", res.body.access_token);
+}

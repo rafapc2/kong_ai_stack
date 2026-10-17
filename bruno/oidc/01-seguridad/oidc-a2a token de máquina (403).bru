@@ -1,0 +1,24 @@
+meta {
+  name: oidc-a2a token de máquina (403)
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{gateway}}/oidc/a2a/
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"jsonrpc":"2.0","id":1,"method":"ping"}
+}
+
+assert {
+  res.status: eq 403
+}
