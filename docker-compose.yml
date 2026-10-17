@@ -40,6 +40,13 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Login social (Keycloak como broker). Crea la app OAuth en cada proveedor (ver .env.example / README).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-sin-configurar}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-sin-configurar}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-sin-configurar}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-sin-configurar}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-sin-configurar}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-sin-configurar}
     volumes:
       - ./keycloak/kong-demo-realm.json:/opt/keycloak/data/import/kong-demo-realm.json:ro
     ports:

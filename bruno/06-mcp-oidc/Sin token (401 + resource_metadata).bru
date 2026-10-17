@@ -1,0 +1,24 @@
+meta {
+  name: Sin token (401 + resource_metadata)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{gateway}}/mcp-oidc
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {"jsonrpc":"2.0","id":1,"method":"ping"}
+}
+
+assert {
+  res.status: eq 401
+  res.headers["www-authenticate"]: contains resource_metadata
+}

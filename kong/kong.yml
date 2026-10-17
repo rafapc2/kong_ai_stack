@@ -33,6 +33,21 @@ consumers:
           IGPbAmLlxtvkPR8mx767CJDtrfCWtX43LQAxUGCXaQJ6IK8VgT9w6d5I9/q14V0f
           PwIDAQAB
           -----END PUBLIC KEY-----
+  - username: mcp-oidc-client   # app MCP con login de usuario (OIDC authorization_code + PKCE); azp del token
+    jwt_secrets:
+      - key: mcp-oidc-client
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl81ckpJ6SmhLh1yWbZM7
+          /At1HaIhjs9FwS14Bcdjn4yyLvvjID42WpMYZGvXjWLjSnmpQmay7IP1RI5JS2tC
+          hq9fPaV8R6IBH9E233rXyGiagOJK0uEjmPSlFtxd1EaLQdXVP8Ui0Z+x3KAdhKbB
+          tKIZLq7JaVXbhbKedYF8KnIy5QsDTDWe0jMYszXFCAdvIGXr7RwvetmjXLLaYlss
+          6QfKOIBf0O6uj95opxFmoWljkV9E0BvnwgVDsPJKNzQ+bHAXr/lBA4f7Xd1yHltX
+          IGPbAmLlxtvkPR8mx767CJDtrfCWtX43LQAxUGCXaQJ6IK8VgT9w6d5I9/q14V0f
+          PwIDAQAB
+          -----END PUBLIC KEY-----
+    acls: [{ group: oidc-users }]
 
 # ---- Observabilidad: métricas Prometheus en la Admin API (:8001/metrics) ----
 plugins:
@@ -191,6 +206,51 @@ services:
         config: { allowed_payload_size: 1 }   # MB
       - name: correlation-id
         config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+
+  # ===== 2b) MCP Gateway con OpenID Connect (login de usuario) =====
+  # Solo acepta Bearer emitido por Keycloak tras un login (Google / GitHub / LinkedIn vía identity brokering) con
+  # authorization_code + PKCE. NO acepta apikey ni tokens client_credentials: el grupo ACL solo lo tiene mcp-oidc-client.
+  # (El plugin openid-connect de Kong es de pago; aquí Keycloak hace el login y Kong valida el JWT con `jwt`.)
+  - name: mcp-oidc-backend
+    url: http://mcp-server:8000
+    routes:
+      - name: mcp-oidc
+        paths: [/mcp-oidc]
+        strip_path: true
+    plugins:
+      - name: jwt
+        config:
+          key_claim_name: azp
+          claims_to_verify: [exp]
+      - name: acl
+        config: { allow: [oidc-users] }
+      - name: rate-limiting
+        config: { minute: 30, policy: local, limit_by: consumer }
+      - name: request-size-limiting
+        config: { allowed_payload_size: 1 }
+      - name: correlation-id
+        config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+      - name: post-function     # descubrimiento (MCP / RFC 9728): dónde está el servidor de autorización
+        config:
+          header_filter:
+            - |
+              if kong.response.get_status() == 401 then
+                kong.response.set_header("WWW-Authenticate", 'Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/mcp-oidc"')
+              end
+
+  # Metadatos del recurso protegido (RFC 9728): público, sin autenticación.
+  - name: mcp-oidc-metadata
+    url: http://mcp-server:8000
+    routes:
+      - name: mcp-oidc-metadata
+        paths: [/.well-known/oauth-protected-resource/mcp-oidc]
+        strip_path: false
+    plugins:
+      - name: request-termination
+        config:
+          status_code: 200
+          content_type: application/json
+          body: '{"resource":"http://localhost:8000/mcp-oidc","authorization_servers":["http://localhost:8180/realms/kong-demo"],"bearer_methods_supported":["header"]}'
 
   # ===== 3) A2A Gateway: proxy + políticas sobre agentes A2A =====
   - name: a2a-backend

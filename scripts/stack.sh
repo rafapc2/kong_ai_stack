@@ -145,6 +145,21 @@ getkey() {
   printf '%s' "$v"
 }
 
+# Login por authorization_code + PKCE contra Keycloak con el usuario demo/demo (sin navegador); imprime el access_token.
+oidc_login() {
+  local kc=http://localhost:8180/realms/kong-demo/protocol/openid-connect v ch jar page act loc code
+  v="$(openssl rand -base64 48 | tr -d '=+/\n' | cut -c1-64)"
+  ch="$(printf '%s' "$v" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+  jar="$(mktemp)"
+  page="$(curl -s -c "$jar" -b "$jar" "$kc/auth?client_id=mcp-oidc-client&response_type=code&scope=openid&redirect_uri=http://localhost:9999/cb&code_challenge=$ch&code_challenge_method=S256")"
+  act="$(printf '%s' "$page" | sed -nE 's/.*action="([^"]+)".*/\1/p' | head -1 | sed 's/&amp;/\&/g')"
+  loc="$(curl -s -c "$jar" -b "$jar" -o /dev/null -D - "$act" -d username=demo -d password=demo | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}')"
+  code="$(printf '%s' "$loc" | sed -nE 's/.*[?&]code=([^&]+).*/\1/p')"
+  curl -s "$kc/token" -d grant_type=authorization_code -d client_id=mcp-oidc-client -d code="$code" \
+    -d redirect_uri=http://localhost:9999/cb -d code_verifier="$v" | sed -nE 's/.*"access_token":"([^"]+)".*/\1/p'
+  rm -f "$jar"
+}
+
 # ---------- pruebas automáticas (equivalen a docs/PRUEBAS.md) ----------
 PASS=0; FAIL=0
 check() {  # check <nombre> <esperado> <obtenido>
@@ -205,6 +220,17 @@ cmd_test() {
   check "apikey sigue funcionando junto a OAuth" 200 "$(code "$GW/mcp" "${A[@]}" -d "$ping")"
   check "apikey inválida → 401" 401 "$(code "$GW/mcp" -H 'apikey: nope' "${JH[@]}" -d "$ping")"
   has "el token se asocia a un consumer (rate limit por cliente)" "X-RateLimit-Limit-Minute:" "$(curl -si "$GW/mcp" -H "Authorization: Bearer $tokb" "${JH[@]}" -d "$ping")"
+
+  step "MCP con OpenID Connect (/mcp-oidc: login de usuario vía Keycloak)"
+  local ut; ut="$(oidc_login)"
+  check "login (authorization_code + PKCE, usuario demo) emite token" yes "$([ -n "$ut" ] && echo yes || echo no)"
+  check "Bearer de usuario → 200 en /mcp-oidc" 200 "$(code "$GW/mcp-oidc" -H "Authorization: Bearer $ut" "${JH[@]}" -d "$ping")"
+  check "token client_credentials (máquina) → 403 en /mcp-oidc" 403 "$(code "$GW/mcp-oidc" -H "Authorization: Bearer $tok" "${JH[@]}" -d "$ping")"
+  check "apikey no vale en /mcp-oidc → 401" 401 "$(code "$GW/mcp-oidc" "${A[@]}" -d "$ping")"
+  check "sin credenciales → 401" 401 "$(code "$GW/mcp-oidc" "${JH[@]}" -d "$ping")"
+  has "401 anuncia resource_metadata (descubrimiento MCP)" "resource_metadata=" "$(curl -si "$GW/mcp-oidc" | tr -d '\r')"
+  has "metadatos del recurso apuntan a Keycloak" '/realms/kong-demo' "$(curl -s "$GW/.well-known/oauth-protected-resource/mcp-oidc")"
+  has "login muestra Google, GitHub y LinkedIn" "broker/linkedin/login" "$(curl -s "http://localhost:8180/realms/kong-demo/protocol/openid-connect/auth?client_id=mcp-oidc-client&response_type=code&scope=openid&redirect_uri=http://localhost:9999/cb&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256")"
 
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"

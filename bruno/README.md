@@ -8,3 +8,5 @@
 Los tests de cada petición (pestaña *Assert*) equivalen a los de `./scripts/stack.sh test`.
 Ojo: el rate limit es de 10/min por consumidor en IA (30/min en MCP): si ejecutas la colección varias veces seguidas, espera al minuto siguiente.
 La carpeta `99-rate-limit` consume la cuota de bob a propósito: déjala para el final.
+
+**`06-mcp-oidc`:** comprueba que `/mcp-oidc` rechaza apikey y tokens de máquina. La petición con login de usuario no está en la colección (necesita navegador): en Bruno puedes usar *Auth → OAuth 2.0 → Authorization Code* (PKCE, client `mcp-oidc-client`, auth URL `{{keycloak}}/realms/kong-demo/protocol/openid-connect/auth`, token URL `.../token`, usuario `demo`/`demo`) sobre `POST {{gateway}}/mcp-oidc`.

@@ -102,6 +102,25 @@ curl localhost:8000/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: appl
 - `jwt` y `key-auth` llevan `anonymous` para poder usar cualquiera de los dos; `pre-function` (sin credenciales) y `post-function` (credencial inválida) devuelven 401.
 - **Limitaciones del OSS:** la clave pública del realm está fija en `kong.yml` (la clave RSA del realm es de demo y está en el repo; en producción genera la tuya y no la versiones). No hay lectura de JWKS ni rotación automática: si rotas las claves de Keycloak hay que actualizar `rsa_public_key`. Tampoco hay introspección ni revocación: usa tokens de vida corta (aquí 5 min). La audiencia/issuer no se validan.
 
+## MCP con OpenID Connect y login social (`/mcp-oidc`)
+
+`/mcp-oidc` apunta al mismo MCP server, pero **solo acepta un usuario autenticado**: no vale apikey ni el token de máquina (`client_credentials`, que da 403). El plugin `openid-connect` de Kong es de pago, así que el reparto es:
+
+- **Keycloak** hace el login (OIDC `authorization_code` + PKCE, cliente público `mcp-oidc-client`) y actúa de *identity broker*: en su pantalla de login aparecen **Google, GitHub y LinkedIn**. También hay un usuario local de prueba `demo` / `demo`.
+- **Kong** valida el JWT resultante (`jwt` + `acl` con el grupo `oidc-users`, que solo tiene `mcp-oidc-client`) y publica el descubrimiento al estilo MCP: `401` con `WWW-Authenticate: Bearer resource_metadata=...` y `/.well-known/oauth-protected-resource/mcp-oidc` (RFC 9728) apuntando a Keycloak.
+
+**Activar el login social:** crea una app OAuth en cada proveedor con esta *redirect URI*, y pon las claves en `.env` (ver `.env.example`):
+
+| Proveedor | Redirect URI | Variables |
+|---|---|---|
+| Google | `http://localhost:8180/realms/kong-demo/broker/google/endpoint` | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
+| GitHub | `http://localhost:8180/realms/kong-demo/broker/github/endpoint` | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |
+| LinkedIn | `http://localhost:8180/realms/kong-demo/broker/linkedin/endpoint` | `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` |
+
+Después recrea Keycloak (`docker compose up -d --force-recreate keycloak`; el realm se importa al arrancar). Sin claves los botones se ven pero el proveedor rechaza el login; el usuario `demo` funciona siempre. Las pruebas automáticas hacen el login `demo` por línea de comandos (sin navegador) y **no verifican el login real con Google/GitHub/LinkedIn**: eso requiere tus credenciales y un navegador.
+
+Limitaciones: el rate limit es por *cliente* (`mcp-oidc-client`), no por persona, porque el plugin `jwt` OSS asocia el token al consumer por `azp`; la identidad del usuario (`sub`, `email`) viaja en el token pero Kong no la usa. Tampoco hay rotación automática de claves (ver OAuth2 arriba).
+
 ## Cómo funciona cada pieza
 
 ### AI Gateway

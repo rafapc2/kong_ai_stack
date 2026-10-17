@@ -1,0 +1,19 @@
+meta {
+  name: Metadatos del recurso (RFC 9728)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gateway}}/.well-known/oauth-protected-resource/mcp-oidc
+  body: none
+  auth: none
+}
+
+headers {
+}
+
+assert {
+  res.status: eq 200
+  res.body.authorization_servers[0]: eq http://localhost:8180/realms/kong-demo
+}
