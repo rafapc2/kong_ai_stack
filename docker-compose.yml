@@ -16,6 +16,10 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_LOG_LEVEL: notice
+      # Credenciales de proveedores LLM reales (vacías = rutas /ai/openai y /ai/anthropic deshabilitadas de facto).
+      # Se leen del entorno del host o de un archivo .env (ver .env.example). Kong las resuelve con el vault `env`.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_AUTH_HEADER: Bearer ${OPENAI_API_KEY:-}
     volumes:
       - ./kong/kong.yml:/kong/kong.yml:ro
     ports:

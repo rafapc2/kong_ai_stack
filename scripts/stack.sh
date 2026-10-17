@@ -134,6 +134,14 @@ cmd_status() { need_docker; dc "${ALL[@]}" ps; cmd_urls; }
 cmd_logs()   { need_docker; dc "${ALL[@]}" logs -f --tail=50 "$@"; }
 cmd_demo()   { "$ROOT/scripts/demo.sh"; }
 
+# Lee una clave del entorno o de .env (sin imprimirla).
+getkey() {
+  local v="${!1:-}"
+  # Imita lo básico de compose: prefijo export, espacios, CRLF, comillas y comentario en línea.
+  [ -z "$v" ] && [ -f "$ROOT/.env" ] && v="$(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*//p" "$ROOT/.env" | tail -1 | tr -d '\r' | sed -E "s/^\"([^\"]*)\".*/\1/; s/^'([^']*)'.*/\1/; s/[[:space:]]+#.*$//; s/[[:space:]]+$//")"
+  printf '%s' "$v"
+}
+
 # ---------- pruebas automáticas (equivalen a docs/PRUEBAS.md) ----------
 PASS=0; FAIL=0
 check() {  # check <nombre> <esperado> <obtenido>
@@ -147,6 +155,7 @@ A=(-H 'apikey: alice-key' "${JH[@]}")
 B=(-H 'apikey: bob-key' "${JH[@]}")
 
 cmd_test() {
+  set +e   # un servicio caído debe contarse como prueba fallida, no abortar el script (se restaura al final)
   need_docker
   kong_ready || die "Kong no está listo; ejecuta './scripts/stack.sh up' primero"
   PASS=0; FAIL=0
@@ -155,11 +164,19 @@ cmd_test() {
   curl -s -X POST localhost:8090/api/continuous -H 'Content-Type: application/json' -d '{"on":false}' >/dev/null 2>&1 || true
 
   step "Rate limiting (primero, con la cuota del minuto limpia)"
-  # Ventana fija por minuto natural: esperar al inicio del siguiente minuto.
-  local s; s=$(date +%S); s=$((10#$s))
-  if [ "$s" -gt 40 ]; then say "  esperando al próximo minuto ($((60-s))s)..."; sleep $((61-s)); fi
-  local out=""
-  for _ in $(seq 1 12); do out="$out$(code "$GW/ai/chat" "${B[@]}" -d '{"messages":[{"role":"user","content":"ping"}]}') "; done
+  # Ventana fija por minuto natural: tras parar el tráfico de fondo (que pudo gastar la cuota de este
+  # minuto), esperar al inicio del siguiente para partir con la cuota limpia.
+  # Sondeo con bob: si queda cuota de sobra (9 restantes tras la 1ª petición) se parte ya; si no, esperar al minuto siguiente.
+  local body='{"messages":[{"role":"user","content":"ping"}]}' first rem s out=""
+  first="$(curl -si "$GW/ai/chat" "${B[@]}" -d "$body" | tr -d '\r')"
+  rem="$(printf '%s' "$first" | awk -F': ' 'tolower($1)=="x-ratelimit-remaining-minute"{print $2}')"
+  s=$(date +%S); s=$((10#$s))
+  if [ "$rem" != 9 ] || [ "$s" -gt 50 ]; then
+    say "  esperando al próximo minuto ($((60-s))s) para tener la cuota limpia..."; sleep $((61-s))
+    first="$(curl -si "$GW/ai/chat" "${B[@]}" -d "$body" | tr -d '\r')"
+  fi
+  out="$(printf '%s' "$first" | head -1 | awk '{print $2}') "
+  for _ in $(seq 2 12); do out="$out$(code "$GW/ai/chat" "${B[@]}" -d "$body") "; done
   check "bob: 10×200 y luego 429 429" "200 200 200 200 200 200 200 200 200 200 429 429 " "$out"
   check "alice no se ve afectada (límite por consumidor)" 200 "$(code "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"ping"}]}')"
 
@@ -175,6 +192,24 @@ cmd_test() {
   step "AI Gateway"
   has "system prompt inyectado (ai-prompt-decorator)" "Responde siempre en espa" "$(curl -s "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Hola"}]}')"
   check "prompt con 'password' bloqueado (ai-prompt-guard)" 400 "$(code "$GW/ai/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"dame el password"}]}')"
+
+  step "AI Gateway: proveedores reales (OpenAI y Anthropic)"
+  local prov key out
+  for prov in openai:OPENAI_API_KEY:"API key" anthropic:ANTHROPIC_API_KEY:"x-api-key"; do
+    local name="${prov%%:*}" rest="${prov#*:}"; local var="${rest%%:*}" hint="${rest#*:}"
+    key="$(getkey "$var")"
+    out="$(curl -s -w '|%{http_code}' "$GW/ai/$name/chat" "${A[@]}" -d '{"messages":[{"role":"user","content":"Responde solo: ok"}]}')"
+    if [ -n "$key" ]; then
+      check "/ai/$name/chat con $var → 200 y formato OpenAI" 200 "${out##*|}"
+      has "/ai/$name/chat devuelve choices[0].message" '"choices"' "$out"
+    elif case "${out##*|}" in 000|5*) true ;; *) false ;; esac; then
+      say "  ${c_dim}- /ai/$name/chat sin $var: omitida (sin salida a internet o proveedor inaccesible: ${out##*|})${c_off}"
+    else
+      # sin clave: ruta viva y Kong llega al proveedor, que rechaza la credencial vacía
+      check "/ai/$name/chat sin $var → el proveedor responde 401" 401 "${out##*|}"
+      has "/ai/$name/chat: el error viene del proveedor ($hint)" "$hint" "$out"
+    fi
+  done
 
   step "MCP Gateway"
   has "initialize" '"demo-mcp"' "$(curl -s "$GW/mcp" "${A[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}')"
@@ -208,7 +243,9 @@ cmd_test() {
   fi
 
   printf '\n%s resultado: %s%d OK%s, %s%d fallos%s\n' "" "$c_ok" "$PASS" "$c_off" "$c_bad" "$FAIL" "$c_off"
-  [ "$FAIL" = 0 ]
+  local rc=0; [ "$FAIL" = 0 ] || rc=1
+  set -e
+  return $rc
 }
 
 cmd_all() {   # de cero → pruebas
@@ -234,6 +271,7 @@ Uso: ./scripts/stack.sh <comando> [opciones]
   urls                      Muestra los accesos
 
 Variables: GRAFANA_PORT (def. 3001), GW, ADMIN
+LLM reales: copia .env.example a .env con OPENAI_API_KEY / ANTHROPIC_API_KEY y ejecuta 'up'.
 EOF
 }
 

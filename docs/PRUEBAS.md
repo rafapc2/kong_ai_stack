@@ -52,6 +52,14 @@ curl -s -w "\nHTTP %{http_code}\n" localhost:8000/ai/chat -H 'apikey: alice-key'
 ```
 **Esperado:** `HTTP 400` (**`ai-prompt-guard`**). El backend nunca recibe la petición.
 
+### 4b. Proveedores reales (OpenAI y Anthropic)
+```bash
+curl -s localhost:8000/ai/openai/chat    -H 'apikey: alice-key' -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Responde solo: ok"}]}'
+curl -s localhost:8000/ai/anthropic/chat -H 'apikey: alice-key' -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Responde solo: ok"}]}'
+```
+- **Sin claves** (`.env` vacío): **HTTP 401 con el mensaje del proveedor** ("You didn't provide an API key" / "x-api-key header is required"). Prueba que la ruta funciona y que Kong llega al proveedor.
+- **Con claves** (`cp .env.example .env`, rellenar, `docker compose up -d`): **HTTP 200** con `choices[0].message.content`, en formato OpenAI también para Anthropic.
+
 ## 5. MCP Gateway (`/mcp`)
 ```bash
 H='-H apikey:alice-key -H Content-Type:application/json'

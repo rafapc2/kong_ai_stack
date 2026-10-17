@@ -19,17 +19,77 @@ plugins:
 
 services:
   # ===== 1) AI Gateway: ai-proxy (OSS) =====
-  # ai-proxy construye la petición al proveedor; aquí apunta al mock-llm.
-  # Para un LLM real ver docs/README.md (OpenAI, Ollama, Anthropic...).
+  # Un único service con 3 rutas, una por proveedor. Las políticas comunes (auth, rate limit,
+  # trazabilidad, system prompt y guard) van a nivel de service y aplican a las tres rutas;
+  # ai-proxy va por ruta porque es lo que cambia (proveedor, modelo y credencial).
+  #
+  #   /ai/chat            → mock-llm local (por defecto, sin API key)
+  #   /ai/openai/chat     → OpenAI      (requiere OPENAI_API_KEY)
+  #   /ai/anthropic/chat  → Anthropic   (requiere ANTHROPIC_API_KEY)
+  #
+  # El cliente SIEMPRE usa el formato OpenAI (messages/choices); ai-proxy lo traduce al de cada
+  # proveedor. Las claves se leen del entorno de Kong con el vault `env` (ver .env.example).
   - name: ai-llm
-    url: http://mock-llm:8000   # placeholder: ai-proxy lo sustituye por upstream_url
+    url: http://mock-llm:8000   # placeholder: ai-proxy lo sustituye por el destino del proveedor
     routes:
       - name: ai-chat
         paths: [/ai/chat]
         strip_path: true
+        plugins:
+          - name: ai-proxy
+            config:
+              route_type: llm/v1/chat
+              logging: { log_statistics: true, log_payloads: false }  # métricas kong_ai_*
+              auth:
+                header_name: Authorization
+                header_value: Bearer mock-key
+              model:
+                provider: openai
+                name: gpt-4o-mini
+                options:
+                  upstream_url: http://mock-llm:8000/v1/chat/completions
+
+      # Rutas reales: SIN options.upstream_url a propósito (ai-proxy llama al proveedor, no al mock del service).
+      # No añadas upstream_url aquí o las claves reales irían al mock.
+      - name: ai-chat-openai
+        paths: [/ai/openai/chat]
+        strip_path: true
+        plugins:
+          - name: ai-proxy
+            config:
+              route_type: llm/v1/chat
+              logging: { log_statistics: true, log_payloads: false }
+              auth:
+                header_name: Authorization
+                header_value: "{vault://env/openai-auth-header}"   # env OPENAI_AUTH_HEADER = "Bearer $OPENAI_API_KEY"
+              model:
+                provider: openai
+                name: gpt-4o-mini        # cambia aquí el modelo
+                options:
+                  max_tokens: 512
+                  temperature: 0.7
+
+      - name: ai-chat-anthropic
+        paths: [/ai/anthropic/chat]
+        strip_path: true
+        plugins:
+          - name: ai-proxy
+            config:
+              route_type: llm/v1/chat
+              logging: { log_statistics: true, log_payloads: false }
+              auth:
+                header_name: x-api-key
+                header_value: "{vault://env/anthropic-api-key}"    # env ANTHROPIC_API_KEY
+              model:
+                provider: anthropic
+                name: claude-sonnet-5-5  # cambia aquí el modelo
+                options:
+                  anthropic_version: "2023-06-01"
+                  max_tokens: 512
+                  temperature: 0.7
     plugins:
       - name: key-auth
-      - name: rate-limiting      # límite por consumidor
+      - name: rate-limiting      # límite por consumidor (compartido entre las 3 rutas = presupuesto de IA)
         config: { minute: 10, policy: local, limit_by: consumer }
       - name: correlation-id
         config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
@@ -42,18 +102,6 @@ services:
         config:
           allow_all_conversation_history: true
           deny_patterns: [".*password.*", ".*ignore previous instructions.*"]
-      - name: ai-proxy
-        config:
-          route_type: llm/v1/chat
-          logging: { log_statistics: true, log_payloads: false }  # necesario para las métricas kong_ai_*
-          auth:
-            header_name: Authorization
-            header_value: Bearer mock-key
-          model:
-            provider: openai
-            name: gpt-4o-mini
-            options:
-              upstream_url: http://mock-llm:8000/v1/chat/completions
 
   # ===== 2) MCP Gateway: proxy + políticas sobre MCP (Streamable HTTP) =====
   - name: mcp-backend

@@ -24,6 +24,7 @@ No hay suite de tests ni linter; `scripts/demo.sh` es la verificación end-to-en
 ## Arquitectura
 
 - Toda la lógica de gateway está en `kong/kong.yml` (config declarativa): un `service`+`route` por gateway (`/ai/chat`, `/mcp`, `/a2a`), cada uno con `key-auth` + `rate-limiting`; `/ai/chat` añade `ai-proxy`, `ai-prompt-decorator` y `ai-prompt-guard`.
+- El AI Gateway tiene 3 rutas con el mismo contrato OpenAI: `/ai/chat` (mock), `/ai/openai/chat` y `/ai/anthropic/chat`. Las políticas comunes están a nivel de service (presupuesto de rate-limit compartido) y `ai-proxy` por ruta. Las claves llegan por `.env` → entorno de Kong → `{vault://env/...}`; OpenAI usa `OPENAI_AUTH_HEADER="Bearer $OPENAI_API_KEY"` porque una referencia de vault debe ocupar el valor completo.
 - `ai-proxy` ignora la `url` del service y llama a `model.options.upstream_url` (aquí el mock); en un LLM real se quita ese campo.
 - `services/*` son backends de ejemplo en Python stdlib (sin dependencias), solo accesibles dentro de la red de compose: `mock-llm` (OpenAI-compatible), `mcp-server` (JSON-RPC Streamable HTTP), `a2a-agent` (Agent Card + `message/send`; su `url` pública viene de `PUBLIC_URL` y debe apuntar al gateway).
 - `services/support-agent` (UI en :8080) es el orquestador de la demo: planifica por reglas y hace **todas** sus llamadas a Kong (`GATEWAY`), registrando cada una en una línea de tiempo que `index.html` dibuja. El mock-llm responde a partir del bloque `[CONTEXT]` que el orquestador añade al prompt.

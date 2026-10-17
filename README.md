@@ -93,13 +93,31 @@ El comportamiento esperado de `scripts/demo.sh`: 401 sin key; respuesta del chat
 - `ai-prompt-guard`: `deny_patterns` / `allow_patterns` sobre los prompts.
 - `key-auth` + `rate-limiting` (`limit_by: consumer`).
 
-**Usar un LLM real:** en `kong/kong.yml`, plugin `ai-proxy`, sustituye `model` y `auth`, y elimina `upstream_url`:
-```yaml
-auth: { header_name: Authorization, header_value: "Bearer sk-..." }   # mejor vía vault/env
-model: { provider: openai, name: gpt-4o-mini }
-# Ollama local: provider: llama2, name: llama3, options: { llama2_format: ollama, upstream_url: http://host.docker.internal:11434/api/chat }
+**Proveedores (una ruta por proveedor, mismo contrato OpenAI para el cliente):**
+
+| Ruta | Proveedor | Modelo por defecto | Credencial |
+|---|---|---|---|
+| `/ai/chat` | LLM falso local | `gpt-4o-mini` (simulado) | ninguna |
+| `/ai/openai/chat` | OpenAI | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| `/ai/anthropic/chat` | Anthropic | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+
+```bash
+cp .env.example .env            # rellena las claves que quieras usar (.env está en .gitignore)
+docker compose up -d            # recrea Kong con las claves (o ./scripts/stack.sh up)
+
+curl localhost:8000/ai/openai/chat -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hola"}]}'
+curl localhost:8000/ai/anthropic/chat -H 'apikey: alice-key' -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hola"}]}'
 ```
-Otros proveedores soportados: Anthropic, Azure, Cohere, Mistral, Gemini, Bedrock… (ver la doc del plugin `ai-proxy`). Para fallback/balanceo entre modelos usa el plugin `ai-proxy-advanced` si tu versión lo incluye.
+
+- **Formato único:** el cliente siempre envía `messages` y recibe `choices[0].message`; para Anthropic, `ai-proxy` traduce a la Messages API (`system` separado, `x-api-key`, `anthropic-version`) y normaliza la respuesta.
+- **Las claves no están en `kong.yml`:** se leen del entorno de Kong con el vault `env` (`{vault://env/...}`); el cliente nunca las ve.
+- **Cambiar de modelo:** edita `model.name` de la ruta en `kong/kong.yml` (p. ej. `claude-opus-5-5`, `claude-haiku-4-5-20251001`) y `docker compose restart kong`.
+- **Políticas compartidas:** `key-auth`, `rate-limiting` (10/min por consumidor, **un solo presupuesto para las tres rutas**), `ai-prompt-decorator`, `ai-prompt-guard` y `correlation-id` están a nivel de service, así que protegen igual a todos los proveedores. Las métricas de Grafana se pueden separar por modelo (`ai_provider`, `ai_model`).
+- **Sin clave:** la ruta existe y Kong llega al proveedor, que responde **401 con su propio mensaje** (no es el 401 de Kong por falta de `apikey`). Requiere salida a Internet.
+- **Otro proveedor** (Azure, Mistral, Gemini, Ollama local…): copia una ruta, cambia `provider`/`options` (ver doc del plugin `ai-proxy`).
+- Para fallback o balanceo automático entre proveedores se necesita `ai-proxy-advanced` (edición de pago según su documentación).
 
 ### MCP Gateway
 Kong expone los servidores MCP remotos (Streamable HTTP) detrás de una única URL, con autenticación, límites de uso, límite de payload y trazabilidad. Para varios servidores MCP añade un `service` + `route` por servidor (`/mcp/github`, `/mcp/db`…), y usa `acl` + consumer groups para controlar quién accede a cuál.
