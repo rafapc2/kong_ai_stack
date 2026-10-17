@@ -1,0 +1,24 @@
+meta {
+  name: AI mock con Bearer
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{gateway}}/ai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"Hola"}]}
+}
+
+assert {
+  res.status: eq 200
+}

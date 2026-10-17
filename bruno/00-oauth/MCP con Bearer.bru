@@ -1,0 +1,24 @@
+meta {
+  name: MCP con Bearer
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{gateway}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"jsonrpc":"2.0","id":1,"method":"ping"}
+}
+
+assert {
+  res.status: eq 200
+}

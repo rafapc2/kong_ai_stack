@@ -1,0 +1,19 @@
+meta {
+  name: A2A Agent Card con Bearer
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{gateway}}/a2a/.well-known/agent.json
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{access_token_alice}}
+}
+
+assert {
+  res.status: eq 200
+}

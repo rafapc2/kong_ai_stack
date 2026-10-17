@@ -1,0 +1,25 @@
+meta {
+  name: Token bob
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{keycloak}}/realms/kong-demo/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  client_id: {{bob_client_id}}
+  client_secret: {{bob_client_secret}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  bru.setVar("access_token_bob", res.body.access_token);
+}

@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Kong AI Stack",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

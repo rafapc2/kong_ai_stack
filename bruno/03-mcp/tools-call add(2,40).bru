@@ -1,0 +1,27 @@
+meta {
+  name: tools/call add(2,40)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{gateway}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":40}}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.content[0].text: eq "42"
+  res.headers["x-request-id"]: isString
+  res.headers["x-ratelimit-remaining-minute"]: isDefined
+}

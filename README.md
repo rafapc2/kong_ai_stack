@@ -85,6 +85,8 @@ curl localhost:8000/a2a/ -H 'apikey: alice-key' -H 'Content-Type: application/js
 
 El comportamiento esperado de `scripts/demo.sh`: 401 sin key; respuesta del chat con el system prompt inyectado; 400 al enviar un prompt con "password"; respuestas JSON-RPC de MCP y A2A; y 429 a partir de la 11.ª llamada/minuto a `/ai/chat`.
 
+> 🧪 **Colección de pruebas para Bruno:** carpeta [`bruno/`](bruno/README.md) (OAuth, seguridad, AI, MCP, A2A, rate limit). CLI: `cd bruno && npx @usebruno/cli run --env local`.
+
 ## OAuth2 (client_credentials) con Keycloak
 
 Además de `apikey`, los tres gateways aceptan `Authorization: Bearer <token>` emitido por **Keycloak** (realm `kong-demo`, importado de `keycloak/kong-demo-realm.json`). Kong no emite tokens: solo los valida con el plugin OSS `jwt` (firma RS256 + `exp`), sin plugins de pago.

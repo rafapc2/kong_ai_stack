@@ -1,0 +1,15 @@
+meta {
+  name: Sin credenciales /a2a/
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{gateway}}/a2a/
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}

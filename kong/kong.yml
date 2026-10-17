@@ -141,6 +141,10 @@ services:
         config: { minute: 10, policy: local, limit_by: consumer }
       - name: correlation-id
         config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+      - name: request-transformer   # el proveedor no debe comprimir con br: ai-proxy no decodifica brotli y corta la conexión
+        config:
+          remove:
+            headers: [Accept-Encoding]
       - name: ai-prompt-decorator   # inyecta un system prompt corporativo
         config:
           prompts:

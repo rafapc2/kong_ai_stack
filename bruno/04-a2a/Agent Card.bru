@@ -1,0 +1,20 @@
+meta {
+  name: Agent Card
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gateway}}/a2a/.well-known/agent.json
+  body: none
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_alice}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.url: eq http://localhost:8000/a2a/
+}

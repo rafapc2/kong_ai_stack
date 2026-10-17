@@ -1,0 +1,24 @@
+meta {
+  name: bob #08
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{gateway}}/ai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_bob}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"ping"}]}
+}
+
+assert {
+  res.status: eq 200
+}

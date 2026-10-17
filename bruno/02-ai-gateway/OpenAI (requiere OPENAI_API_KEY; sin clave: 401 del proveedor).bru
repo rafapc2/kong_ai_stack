@@ -1,0 +1,24 @@
+meta {
+  name: OpenAI (requiere OPENAI_API_KEY; sin clave: 401 del proveedor)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{gateway}}/ai/openai/chat
+  body: json
+  auth: none
+}
+
+headers {
+  apikey: {{apikey_alice}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"messages":[{"role":"user","content":"Responde solo: ok"}]}
+}
+
+assert {
+  res.status: in [200, 401]
+}

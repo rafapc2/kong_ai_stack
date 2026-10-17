@@ -1,0 +1,26 @@
+meta {
+  name: Token alice
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{keycloak}}/realms/kong-demo/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  client_id: {{alice_client_id}}
+  client_secret: {{alice_client_secret}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.token_type: eq Bearer
+}
+
+script:post-response {
+  bru.setVar("access_token_alice", res.body.access_token);
+}

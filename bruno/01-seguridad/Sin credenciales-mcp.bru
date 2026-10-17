@@ -1,0 +1,15 @@
+meta {
+  name: Sin credenciales /mcp
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{gateway}}/mcp
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}

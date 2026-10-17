@@ -1,0 +1,15 @@
+meta {
+  name: Sin credenciales /ai/chat
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gateway}}/ai/chat
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
